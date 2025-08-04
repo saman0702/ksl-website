@@ -1,7 +1,7 @@
 import React from 'react';
 import { X } from 'lucide-react';
 
-const Modal = ({ isOpen, onClose, size = 'max-w-lg', children }) => {
+const Modal = ({ isOpen, onClose, size = 'max-w-lg', title, children }) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 backdrop-blur-sm transition-all">
@@ -13,6 +13,11 @@ const Modal = ({ isOpen, onClose, size = 'max-w-lg', children }) => {
         >
           <X className="h-5 w-5" />
         </button>
+        {title && (
+          <div className="px-6 pt-6 pb-4 border-b border-gray-200 dark:border-gray-700">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h3>
+          </div>
+        )}
         <div className="p-6">{children}</div>
       </div>
       <style>{`

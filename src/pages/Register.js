@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { authAPI } from '../services/api';
+import { userAPI, authAPI } from '../services/api';
 import { 
   User, 
   Mail, 
@@ -91,15 +91,34 @@ export default function Register() {
         address: formData.address
       };
 
+      // const response = await userAPI.createUser(userData);
       const response = await authAPI.register(userData);
+      // const response = await fetch('https://backend.katianlogistique.com/api/auth/register/', {
+      //   method: 'POST',
+      //   headers: {
+      //     'Content-Type': 'application/json',
+      //   },
+      //   body: JSON.stringify(userData)
+      // });
+
       console.log('✅ Inscription réussie:', response);
       
-      setSuccess('Compte créé avec succès ! Vous pouvez maintenant vous connecter.');
-      
-      // Rediriger vers la page de connexion après 2 secondes
-      setTimeout(() => {
-        navigate('/login');
-      }, 2000);
+      // Gestion de la redirection selon le rôle
+      if (formData.role === 'client') {
+        setSuccess('Compte créé avec succès ! Redirection vers votre espace client...');
+        
+        // Rediriger vers l'espace business après 2 secondes
+        setTimeout(() => {
+          window.location.href = 'https://business.katianlogistique.com';
+        }, 2000);
+      } else {
+        setSuccess('Votre demande a été prise en compte ! Notre équipe vous contactera bientôt pour finaliser votre inscription.');
+        
+        // Rediriger vers la page d'accueil après 3 secondes
+        setTimeout(() => {
+          navigate('/');
+        }, 3000);
+      }
     } catch (error) {
       console.error('❌ Erreur d\'inscription:', error);
       setError(error.response?.data?.message || 'Erreur lors de la création du compte.');
@@ -109,45 +128,45 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-dark-bg dark:to-dark-bg-secondary py-12">
-      <div className="container-ksl">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-dark-bg dark:to-dark-bg-secondary py-8 sm:py-12">
+      <div className="container-ksl px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
-          <div className="text-center mb-8">
-            <h1 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+          <div className="text-center mb-6 sm:mb-8">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-3 sm:mb-4">
               Créer votre compte
             </h1>
-            <p className="text-lg text-gray-600 dark:text-gray-300">
+            <p className="text-base sm:text-lg text-gray-600 dark:text-gray-300">
               Rejoignez Katian et commencez à optimiser votre logistique
             </p>
           </div>
 
           {/* Progress Steps */}
-          <div className="flex justify-center mb-8">
-            <div className="flex items-center space-x-4">
-              <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${
+          <div className="flex justify-center mb-6 sm:mb-8">
+            <div className="flex items-center space-x-2 sm:space-x-4">
+              <div className={`flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full border-2 ${
                 currentStep >= 1 ? 'bg-ksl-red border-ksl-red text-white' : 'border-gray-300 text-gray-500'
               }`}>
-                {currentStep > 1 ? <CheckCircle className="w-5 h-5" /> : '1'}
+                {currentStep > 1 ? <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" /> : <span className="text-sm sm:text-base">1</span>}
               </div>
-              <div className={`w-16 h-1 ${currentStep > 1 ? 'bg-ksl-red' : 'bg-gray-300'}`}></div>
-              <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${
+              <div className={`w-12 sm:w-16 h-1 ${currentStep > 1 ? 'bg-ksl-red' : 'bg-gray-300'}`}></div>
+              <div className={`flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full border-2 ${
                 currentStep >= 2 ? 'bg-ksl-red border-ksl-red text-white' : 'border-gray-300 text-gray-500'
               }`}>
-                {currentStep > 2 ? <CheckCircle className="w-5 h-5" /> : '2'}
+                {currentStep > 2 ? <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" /> : <span className="text-sm sm:text-base">2</span>}
               </div>
             </div>
           </div>
 
           {/* Form */}
-          <div className="bg-white dark:bg-dark-bg-secondary rounded-2xl shadow-lg p-8 border border-gray-200 dark:border-gray-700">
+          <div className="bg-white dark:bg-dark-bg-secondary rounded-2xl shadow-lg p-4 sm:p-6 md:p-8 border border-gray-200 dark:border-gray-700">
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg mb-6">
                 {error}
               </div>
             )}
             {success && (
-              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg mb-6">
+              <div className="bg-green-50 border border-green-200 text-green-800 px-3 sm:px-4 py-2 sm:py-3 rounded-lg mb-4 sm:mb-6">
                 {success}
               </div>
             )}
@@ -155,12 +174,12 @@ export default function Register() {
             <form onSubmit={handleSubmit}>
               {/* Step 1: Informations personnelles */}
               {currentStep === 1 && (
-                <div className="space-y-6">
-                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">
+                <div className="space-y-4 sm:space-y-6">
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">
                     Informations personnelles
                   </h2>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                     {/* Prénom */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -174,7 +193,7 @@ export default function Register() {
                           value={formData.first_name}
                           onChange={handleChange}
                           placeholder="Votre prénom"
-                          className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-ksl-red"
+                          className="w-full pl-10 pr-4 py-2 sm:py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-ksl-red"
                           required
                         />
                       </div>
@@ -284,7 +303,7 @@ export default function Register() {
                     <button
                       type="button"
                       onClick={nextStep}
-                      className="px-6 py-3 bg-ksl-red text-white rounded-lg hover:bg-ksl-red-dark transition-colors duration-200 font-medium flex items-center space-x-2"
+                      className="px-4 sm:px-6 py-2 sm:py-3 bg-ksl-red text-white rounded-lg hover:bg-ksl-red-dark transition-colors duration-200 font-medium flex items-center space-x-2 text-sm sm:text-base"
                     >
                       <span>Suivant</span>
                       <ArrowRight className="w-4 h-4" />
@@ -295,12 +314,12 @@ export default function Register() {
 
               {/* Step 2: Informations supplémentaires */}
               {currentStep === 2 && (
-                <div className="space-y-6">
-                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">
+                <div className="space-y-4 sm:space-y-6">
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">
                     Informations supplémentaires
                   </h2>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                     {/* Type d'entreprise - SEULEMENT pour les points relais et entreprises */}
                     {(formData.role === 'relay_point' || formData.role === 'entreprise') && (
                       <div className="md:col-span-2">
@@ -313,7 +332,7 @@ export default function Register() {
                             name="business_type"
                             value={formData.business_type}
                             onChange={handleChange}
-                            className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-ksl-red"
+                            className="w-full pl-10 pr-4 py-2 sm:py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-ksl-red"
                             required
                           >
                             <option value="">Sélectionner le type d'entreprise</option>
@@ -352,18 +371,18 @@ export default function Register() {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex justify-between">
+                  <div className="flex flex-col sm:flex-row justify-between space-y-3 sm:space-y-0">
                     <button
                       type="button"
                       onClick={prevStep}
-                      className="px-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors duration-200 font-medium"
+                      className="px-4 sm:px-6 py-2 sm:py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors duration-200 font-medium text-sm sm:text-base"
                     >
                       Retour
                     </button>
                     <button
                       type="submit"
                       disabled={isLoading}
-                      className="px-6 py-3 bg-ksl-red text-white rounded-lg hover:bg-ksl-red-dark transition-colors duration-200 font-medium flex items-center space-x-2 disabled:opacity-50"
+                      className="px-4 sm:px-6 py-2 sm:py-3 bg-ksl-red text-white rounded-lg hover:bg-ksl-red-dark transition-colors duration-200 font-medium flex items-center space-x-2 disabled:opacity-50 text-sm sm:text-base"
                     >
                       {isLoading ? (
                         <>
@@ -384,8 +403,8 @@ export default function Register() {
           </div>
 
           {/* Login Link */}
-          <div className="text-center mt-8">
-            <p className="text-gray-600 dark:text-gray-300">
+          <div className="text-center mt-6 sm:mt-8">
+            <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300">
               Vous avez déjà un compte ?{' '}
               <Link to="/login" className="text-ksl-red hover:text-ksl-red-dark font-medium">
                 Se connecter

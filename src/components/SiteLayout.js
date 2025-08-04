@@ -1,29 +1,23 @@
 import React, { useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
-import { Sun, Moon, Menu, X, MapPin, Phone, Mail, Facebook, Instagram, Twitter, Linkedin, MessageCircle, ChevronDown } from 'lucide-react';
+import { Sun, Moon, Menu, X, MapPin, Phone, Mail, Facebook, Instagram, Twitter, Linkedin, MessageCircle, ChevronDown, Package, Building, Rocket } from 'lucide-react';
 
 const navItems = [
+  { label: 'Expédier un colis', to: '/expedier',  icon: Package },
+  { label: 'Devenir Point Relais', to: '/devenir-relais',  icon: Building },
   { 
-    label: 'Solutions', 
+    label: 'Solutions Pro', 
     to: '/solutions',
-    hasSubmenu: true,
-    submenu: [
-      { label: 'E-commerce', section: 'ecommerce', description: 'Solutions pour boutiques en ligne' },
-      { label: 'Logistique B2B', section: 'b2b', description: 'Gestion logistique entreprise' },
-      { label: 'Points Relais', section: 'points-relais', description: 'Réseau de points de retrait' },
-      { label: 'Livraison Express', section: 'express', description: 'Livraison rapide et sécurisée' },
-      { label: 'Tracking Avancé', section: 'tracking', description: 'Suivi en temps réel' }
-    ]
+    icon: Rocket
   },
-  { label: 'Fonctionnalités', to: '/fonctionnalites' },
-  { label: 'Pour qui ?', to: '/pour-qui' },
-  { label: 'Tarifs', to: '/tarifs' },
-  { label: 'Devenir Point Relais', to: '/devenir-relais' },
-  { label: 'Partenaires', to: '/partenaires' },
-  { label: 'À propos', to: '/a-propos' },
-  { label: 'Support & Aide', to: '/support' },
-  { label: 'Contact', to: '/contact' },
+  { label: 'Fonctionnalités', to: '/fonctionnalites', hidden: true },
+  { label: 'Pour qui ?', to: '/pour-qui', hidden: true },
+  { label: 'Tarifs', to: '/tarifs', hidden: true },
+  { label: 'Partenaires', to: '/partenaires', hidden: true },
+  { label: 'À propos', to: '/a-propos', hidden: true },
+  { label: 'Support & Aide', to: '/support', hidden: true },
+  { label: 'Contact', to: '/contact', hidden: true },
 ];
 
 export default function SiteLayout({ children }) {
@@ -50,84 +44,22 @@ export default function SiteLayout({ children }) {
           </Link>
 
           {/* Navigation Desktop */}
-          <nav className="hidden lg:flex items-center space-x-0.5">
-            {navItems.map((item) => (
+          <nav className="hidden lg:flex items-center space-x-4">
+            {navItems.filter(item => !item.hidden).map((item) => (
               <div key={item.to} className="relative">
-                {item.hasSubmenu ? (
-                  <div className="relative">
-                    <button
-                      onClick={() => setSolutionsSubmenuOpen(!solutionsSubmenuOpen)}
-                      onMouseEnter={() => setSolutionsSubmenuOpen(true)}
-                      className={`px-2 py-2 text-sm font-bold rounded-lg transition-colors duration-200 whitespace-nowrap flex items-center space-x-1 ${
-                        window.location.pathname.startsWith('/solutions')
-                          ? 'bg-ksl-red text-white' 
-                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary hover:text-gray-900 dark:hover:text-white'
-                      }`}
-                    >
-                      <span>{item.label}</span>
-                      <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${solutionsSubmenuOpen ? 'rotate-180' : ''}`} />
-                    </button>
-                    
-                    {/* Sous-menu Solutions */}
-                    {solutionsSubmenuOpen && (
-                      <div 
-                        className="absolute top-full left-0 mt-1 w-80 bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-50"
-                        onMouseLeave={() => setSolutionsSubmenuOpen(false)}
-                      >
-                        <div className="p-4">
-                          <div className="mb-4">
-                            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Nos Solutions</h3>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">Découvrez nos solutions adaptées à vos besoins</p>
-                          </div>
-                          <div className="space-y-2">
-                            {item.submenu.map((subItem) => (
-                              <Link
-                                key={subItem.section}
-                                to={`/solutions?section=${subItem.section}`}
-                                className="block p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors duration-200 group"
-                                onClick={() => setSolutionsSubmenuOpen(false)}
-                              >
-                                <div className="flex items-start justify-between">
-                                  <div className="flex-1">
-                                    <h4 className="font-semibold text-gray-900 dark:text-white group-hover:text-ksl-red transition-colors duration-200">
-                                      {subItem.label}
-                                    </h4>
-                                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                                      {subItem.description}
-                                    </p>
-                                  </div>
-                                  <div className="w-2 h-2 bg-ksl-red rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-                                </div>
-                              </Link>
-                            ))}
-                          </div>
-                          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                            <Link
-                              to="/solutions"
-                              className="block w-full text-center px-4 py-2 bg-ksl-red text-white rounded-lg hover:bg-ksl-red-dark transition-colors duration-200 font-medium"
-                              onClick={() => setSolutionsSubmenuOpen(false)}
-                            >
-                              Voir toutes nos solutions
-                            </Link>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
               <NavLink
                 to={item.to}
                 className={({ isActive }) =>
-                      `px-2 py-2 text-sm font-bold rounded-lg transition-colors duration-200 whitespace-nowrap ${
+                        `px-4 py-2 text-sm font-bold rounded-lg transition-colors duration-200 whitespace-nowrap flex items-center space-x-3 ${
                         isActive 
                           ? 'bg-ksl-red text-white' 
                           : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary hover:text-gray-900 dark:hover:text-white'
                       }`
                 }
               >
+                  <item.icon className="w-4 h-4" />
                 {item.label}
               </NavLink>
-                )}
               </div>
             ))}
           </nav>
@@ -145,7 +77,7 @@ export default function SiteLayout({ children }) {
             {/* Boutons d'action */}
             <div className="hidden md:flex items-center space-x-2">
               <a 
-                href="https://business.katianlogistique.com/login" 
+                href="https://business.katianlogistique.com" 
                 target="_blank"
                 rel="noopener noreferrer"
                 className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors duration-200 whitespace-nowrap min-w-[100px] text-center"
@@ -173,78 +105,13 @@ export default function SiteLayout({ children }) {
         {/* Menu mobile */}
         {mobileMenuOpen && (
           <div className="lg:hidden border-t border-gray-100 dark:border-gray-800 bg-white dark:bg-dark-bg">
-            <div className="container-ksl py-4 space-y-2">
-              {navItems.map((item) => (
+            <div className="container-ksl py-4 space-y-3">
+              {navItems.filter(item => !item.hidden).map((item) => (
                 <div key={item.to} className="relative">
-                  {item.hasSubmenu ? (
-                    <div className="relative">
-                      <button
-                        onClick={() => {
-                          setSolutionsSubmenuOpen(!solutionsSubmenuOpen);
-                          setMobileMenuOpen(false);
-                        }}
-                        onMouseEnter={() => setSolutionsSubmenuOpen(true)}
-                        className={`block px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${
-                          window.location.pathname.startsWith('/solutions')
-                            ? 'bg-ksl-red text-white' 
-                            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary'
-                        }`}
-                      >
-                        <span>{item.label}</span>
-                        <ChevronDown className={`w-4 h-4 inline-block ml-2 transition-transform duration-200 ${solutionsSubmenuOpen ? 'rotate-180' : ''}`} />
-                      </button>
-                      
-                      {/* Sous-menu Solutions mobile */}
-                      {solutionsSubmenuOpen && (
-                        <div 
-                          className="absolute top-full left-0 mt-1 w-full bg-white dark:bg-dark-bg-secondary border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl z-50"
-                          onMouseLeave={() => setSolutionsSubmenuOpen(false)}
-                        >
-                          <div className="p-3">
-                            <div className="mb-3">
-                              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Nos Solutions</h3>
-                              <p className="text-sm text-gray-600 dark:text-gray-400">Découvrez nos solutions adaptées à vos besoins</p>
-                            </div>
-                            <div className="space-y-2">
-                              {item.submenu.map((subItem) => (
-                                <Link
-                                  key={subItem.section}
-                                  to={`/solutions?section=${subItem.section}`}
-                                  className="block p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors duration-200 group"
-                                  onClick={() => setSolutionsSubmenuOpen(false)}
-                                >
-                                  <div className="flex items-start justify-between">
-                                    <div className="flex-1">
-                                      <h4 className="font-semibold text-gray-900 dark:text-white group-hover:text-ksl-red transition-colors duration-200">
-                                        {subItem.label}
-                                      </h4>
-                                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                                        {subItem.description}
-                                      </p>
-                                    </div>
-                                    <div className="w-2 h-2 bg-ksl-red rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-                                  </div>
-                                </Link>
-                              ))}
-                            </div>
-                            <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-                              <Link
-                                to="/solutions"
-                                className="block w-full text-center px-4 py-2 bg-ksl-red text-white rounded-lg hover:bg-ksl-red-dark transition-colors duration-200 font-medium"
-                                onClick={() => setSolutionsSubmenuOpen(false)}
-                              >
-                                Voir toutes nos solutions
-                              </Link>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
                     <NavLink
                       to={item.to}
                       className={({ isActive }) =>
-                        `block px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${
+                      `block w-full px-4 py-3 text-sm font-medium rounded-lg transition-colors duration-200 flex items-center space-x-3 ${
                           isActive 
                             ? 'bg-ksl-red text-white' 
                             : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-dark-bg-tertiary'
@@ -252,14 +119,14 @@ export default function SiteLayout({ children }) {
                       }
                       onClick={() => setMobileMenuOpen(false)}
                     >
+                    <item.icon className="w-5 h-5" />
                       {item.label}
                     </NavLink>
-                  )}
                 </div>
               ))}
               <div className="pt-4 space-y-3">
                 <a 
-                  href="https://business.katianlogistique.com/login" 
+                  href="https://business.katianlogistique.com" 
                   target="_blank"
                   rel="noopener noreferrer"
                   className="block w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors duration-200 text-center whitespace-nowrap"
@@ -328,6 +195,7 @@ export default function SiteLayout({ children }) {
                   { to: '/fonctionnalites', label: 'Fonctionnalités' },
                   { to: '/tarifs', label: 'Tarifs' },
                   { to: '/devenir-relais', label: 'Devenir Point Relais' },
+                  { to: '/support', label: 'Support & Aide' },
                   { to: '/a-propos', label: 'À propos' }
                 ].map((link, index) => (
                   <li key={link.to}>
@@ -354,7 +222,7 @@ export default function SiteLayout({ children }) {
                     <MapPin className="w-4 h-4 text-white" />
                   </div>
                   <span className="text-ksl-gray-light text-sm group-hover:text-white transition-colors duration-300">
-                    123 Rue de l'Innovation, Dakar, Sénégal
+                    Immeuble Palladium, Bel Air, Abidjan
                   </span>
                 </div>
                 <div className="flex items-center space-x-4 group">
@@ -362,7 +230,15 @@ export default function SiteLayout({ children }) {
                     <Phone className="w-4 h-4 text-white" />
                   </div>
                   <span className="text-ksl-gray-light text-sm group-hover:text-white transition-colors duration-300">
-                    +221 XX XXX XX XX
+                    +225 01 60 00 55 55
+                  </span>
+                </div>
+                <div className="flex items-center space-x-4 group">
+                  <div className="w-8 h-8 bg-gradient-to-br from-ksl-gray to-ksl-gray-dark rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300 flex-shrink-0">
+                    <Phone className="w-4 h-4 text-white" />
+                  </div>
+                  <span className="text-ksl-gray-light text-sm group-hover:text-white transition-colors duration-300">
+                    +225 05 66 03 02 02
                   </span>
                 </div>
                 <div className="flex items-center space-x-4 group">

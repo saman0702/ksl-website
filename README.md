@@ -11,13 +11,13 @@ Site web officiel de Katian Logistique, une plateforme innovante pour optimiser 
 - **Routing côté client** optimisé
 - **Performance optimisée** avec compression et cache
 
-## 🚀 Déploiement sur katianlogistique.com
+## 🚀 Déploiement sur katianlogistique.com/ksl-website
 
 ### Prérequis
 
 - Node.js (version 14 ou supérieure)
 - npm ou yarn
-- Accès au répertoire `public_html` de votre hébergement
+- Accès au répertoire `public_html/ksl-website` de votre hébergement
 
 ### Configuration du fichier .htaccess
 
@@ -38,8 +38,8 @@ Le fichier `.htaccess` est déjà configuré dans le dossier `public/` avec :
    # Éditez le fichier deploy.sh
    nano deploy.sh
    
-   # Remplacez cette ligne par le chemin réel vers votre public_html :
-   DEPLOY_DIR="/chemin/vers/votre/public_html"
+   # Remplacez cette ligne par le chemin réel vers votre public_html/ksl-website :
+   DEPLOY_DIR="/chemin/vers/votre/public_html/ksl-website"
    ```
 
 2. **Exécutez le script** :
@@ -57,17 +57,17 @@ Le fichier `.htaccess` est déjà configuré dans le dossier `public/` avec :
 
 2. **Copier les fichiers** :
    ```bash
-   # Copier le contenu du dossier build vers votre public_html
-   cp -r build/* /chemin/vers/votre/public_html/
+   # Copier le contenu du dossier build vers votre public_html/ksl-website
+   cp -r build/* /chemin/vers/votre/public_html/ksl-website/
    
    # Copier le fichier .htaccess
-   cp public/.htaccess /chemin/vers/votre/public_html/
+   cp public/.htaccess /chemin/vers/votre/public_html/ksl-website/
    ```
 
 3. **Configurer les permissions** :
    ```bash
-   chmod 644 /chemin/vers/votre/public_html/*
-   chmod 755 /chemin/vers/votre/public_html
+   chmod 644 /chemin/vers/votre/public_html/ksl-website/*
+   chmod 755 /chemin/vers/votre/public_html/ksl-website
    ```
 
 ### Configuration SSL/HTTPS
@@ -83,8 +83,8 @@ RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
 Après le déploiement, vérifiez que :
 
-- ✅ Le site est accessible sur https://katianlogistique.com
-- ✅ Le routing fonctionne (essayez d'accéder directement à `/login` ou `/register`)
+- ✅ Le site est accessible sur https://katianlogistique.com/ksl-website
+- ✅ Le routing fonctionne (essayez d'accéder directement à `/ksl-website/login` ou `/ksl-website/register`)
 - ✅ Les images et ressources se chargent correctement
 - ✅ Le thème sombre/clair fonctionne
 - ✅ L'inscription et la connexion marchent

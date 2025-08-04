@@ -215,7 +215,7 @@ export const Alert = ({ children, variant = 'info', className = '', ...props }) 
 };
 
 // Modal
-export const Modal = ({ isOpen, onClose, children, size = 'max-w-4xl', className = '' }) => {
+export const Modal = ({ isOpen, onClose, children, size = 'max-w-4xl', className = '', title }) => {
   const [show, setShow] = useState(isOpen);
   const [animate, setAnimate] = useState(false);
   const timeoutRef = useRef();
@@ -254,7 +254,12 @@ export const Modal = ({ isOpen, onClose, children, size = 'max-w-4xl', className
             className
           )}
         >
-          {children}
+          {title && (
+            <div className="px-6 pt-6 pb-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h3>
+            </div>
+          )}
+          <div className="p-6">{children}</div>
         </div>
       </div>
     </div>

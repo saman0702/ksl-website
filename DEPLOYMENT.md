@@ -36,18 +36,18 @@ Le dossier `build/` contient tous les fichiers nécessaires :
 
 #### 4. Vérifier les permissions
 ```bash
-chmod 644 public_html/*
-chmod 755 public_html
-chmod 644 public_html/.htaccess
+chmod 644 public_html/ksl-website/*
+chmod 755 public_html/ksl-website
+chmod 644 public_html/ksl-website/.htaccess
 ```
 
 ### ✅ Vérification
 
 Après le déploiement, testez :
 
-1. **Page d'accueil** : https://katianlogistique.com
-2. **Routing** : https://katianlogistique.com/login
-3. **Inscription** : https://katianlogistique.com/register
+1. **Page d'accueil** : https://katianlogistique.com/ksl-website
+2. **Routing** : https://katianlogistique.com/ksl-website/login
+3. **Inscription** : https://katianlogistique.com/ksl-website/register
 4. **Thème sombre/clair** : Cliquez sur l'icône de thème
 
 ### 🚨 Problèmes courants
@@ -61,7 +61,7 @@ Après le déploiement, testez :
 - Vérifiez que tous les fichiers sont uploadés
 
 **Site ne se charge pas**
-- Vérifiez que `index.html` est à la racine de `public_html`
+- Vérifiez que `index.html` est à la racine de `public_html/ksl-website`
 - Vérifiez les logs d'erreur de votre hébergeur
 
 ### 📞 Support

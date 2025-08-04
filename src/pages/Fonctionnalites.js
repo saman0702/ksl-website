@@ -168,7 +168,7 @@ export default function Fonctionnalites() {
       features: [
         {
           icon: CreditCard,
-          title: 'Cash on Delivery (COD)',
+          title: 'Paiement à la  Livraison (PAL)',
           description: 'Paiement sécurisé à la livraison pour rassurer vos clients',
           benefits: ['Sécurité maximale', 'Confiance client', 'Réduction impayés']
         },
@@ -257,66 +257,66 @@ export default function Fonctionnalites() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-dark-bg dark:to-dark-bg-secondary">
       {/* Hero Section */}
-      <section className="bg-gradient-to-br from-ksl-red via-ksl-red-dark to-ksl-black text-white py-20">
-        <div className="container-ksl text-center">
-          <h1 className="text-4xl md:text-6xl font-bold mb-6">
+      <section className="bg-gradient-to-br from-ksl-red via-ksl-red-dark to-ksl-black text-white py-12 sm:py-16 md:py-20">
+        <div className="container-ksl text-center px-4 sm:px-6 lg:px-8">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-6xl font-bold mb-4 sm:mb-6">
             Nos Fonctionnalités
           </h1>
-          <p className="text-xl md:text-2xl text-ksl-gray-light mb-8 max-w-3xl mx-auto">
+          <p className="text-base sm:text-lg md:text-xl lg:text-2xl text-ksl-gray-light mb-6 sm:mb-8 max-w-3xl mx-auto px-4">
             Découvrez toutes les fonctionnalités avancées de notre plateforme logistique
           </p>
-          <div className="flex flex-wrap justify-center gap-4">
+          <div className="flex flex-wrap justify-center gap-2 sm:gap-3 md:gap-4">
             {categories.map((category) => (
-              <button
-                key={category.id}
-                onClick={() => setActiveCategory(category.id)}
-                className={`px-6 py-3 rounded-full font-medium transition-all duration-300 flex items-center space-x-2 ${
-                  activeCategory === category.id
-                    ? 'bg-white text-ksl-red shadow-lg'
-                    : 'bg-white/10 text-white hover:bg-white/20'
-                }`}
-              >
-                <category.icon className="w-5 h-5" />
-                <span>{category.title}</span>
-              </button>
+                              <button
+                  key={category.id}
+                  onClick={() => setActiveCategory(category.id)}
+                  className={`px-3 sm:px-4 md:px-6 py-2 sm:py-3 rounded-full font-medium transition-all duration-300 flex items-center space-x-2 text-sm sm:text-base ${
+                    activeCategory === category.id
+                      ? 'bg-white text-ksl-red shadow-lg'
+                      : 'bg-white/10 text-white hover:bg-white/20'
+                  }`}
+                >
+                  <category.icon className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <span>{category.title}</span>
+                </button>
             ))}
           </div>
         </div>
       </section>
 
       {/* Features Content */}
-      <section className="py-20">
-        <div className="container-ksl">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+      <section className="py-12 sm:py-16 md:py-20">
+        <div className="container-ksl px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12 sm:mb-16">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
               {featuresByCategory[activeCategory].title}
             </h2>
-            <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+            <p className="text-base sm:text-lg md:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
               {featuresByCategory[activeCategory].subtitle}
             </p>
           </div>
 
           {/* Features Grid */}
-          <div className="grid lg:grid-cols-2 gap-8 mb-16">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 md:gap-8 mb-12 sm:mb-16">
             {featuresByCategory[activeCategory].features.map((feature, index) => (
               <div 
                 key={index}
-                className="bg-white dark:bg-dark-bg-secondary rounded-2xl p-8 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 border border-gray-200 dark:border-gray-700"
+                className="bg-white dark:bg-dark-bg-secondary rounded-2xl p-4 sm:p-6 md:p-8 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 border border-gray-200 dark:border-gray-700"
               >
-                <div className={`w-16 h-16 bg-gradient-to-br ${categories.find(c => c.id === activeCategory).color} rounded-2xl flex items-center justify-center mb-6`}>
-                  <feature.icon className="w-8 h-8 text-white" />
+                <div className={`w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-br ${categories.find(c => c.id === activeCategory).color} rounded-2xl flex items-center justify-center mb-4 sm:mb-6`}>
+                  <feature.icon className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
                 </div>
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white mb-3 sm:mb-4">
                   {feature.title}
                 </h3>
-                <p className="text-gray-600 dark:text-gray-300 leading-relaxed mb-6">
+                <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed mb-4 sm:mb-6">
                   {feature.description}
                 </p>
                 <div className="space-y-2">
                   {feature.benefits.map((benefit, benefitIndex) => (
-                    <div key={benefitIndex} className="flex items-center space-x-3">
-                      <CheckCircle className="w-5 h-5 text-ksl-red flex-shrink-0" />
-                      <span className="text-sm text-gray-600 dark:text-gray-400">{benefit}</span>
+                    <div key={benefitIndex} className="flex items-center space-x-2 sm:space-x-3">
+                      <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-ksl-red flex-shrink-0" />
+                      <span className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">{benefit}</span>
                     </div>
                   ))}
                 </div>
@@ -325,31 +325,31 @@ export default function Fonctionnalites() {
           </div>
 
           {/* Stats Section */}
-          <div className="bg-gradient-to-br from-ksl-red to-ksl-red-dark rounded-3xl p-8 md:p-12 text-white">
-            <div className="text-center mb-8">
-              <h3 className="text-2xl md:text-3xl font-bold mb-4">
+          <div className="bg-gradient-to-br from-ksl-red to-ksl-red-dark rounded-3xl p-4 sm:p-6 md:p-8 lg:p-12 text-white">
+            <div className="text-center mb-6 sm:mb-8">
+              <h3 className="text-xl sm:text-2xl md:text-3xl font-bold mb-3 sm:mb-4">
                 Chiffres Clés
               </h3>
-              <p className="text-ksl-gray-light text-lg">
+              <p className="text-sm sm:text-base md:text-lg text-ksl-gray-light">
                 Notre plateforme en quelques chiffres
               </p>
             </div>
-            <div className="grid md:grid-cols-4 gap-8">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 md:gap-8">
               <div className="text-center">
-                <div className="text-3xl md:text-4xl font-bold mb-2">99.9%</div>
-                <div className="text-ksl-gray-light">Disponibilité</div>
+                <div className="text-2xl sm:text-3xl md:text-4xl font-bold mb-2">99.9%</div>
+                <div className="text-xs sm:text-sm text-ksl-gray-light">Disponibilité</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl md:text-4xl font-bold mb-2">500+</div>
-                <div className="text-ksl-gray-light">Points Relais</div>
+                <div className="text-2xl sm:text-3xl md:text-4xl font-bold mb-2">500+</div>
+                <div className="text-xs sm:text-sm text-ksl-gray-light">Points Relais</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl md:text-4xl font-bold mb-2">24/7</div>
-                <div className="text-ksl-gray-light">Support Client</div>
+                <div className="text-2xl sm:text-3xl md:text-4xl font-bold mb-2">24/7</div>
+                <div className="text-xs sm:text-sm text-ksl-gray-light">Support Client</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl md:text-4xl font-bold mb-2">50+</div>
-                <div className="text-ksl-gray-light">Intégrations</div>
+                <div className="text-2xl sm:text-3xl md:text-4xl font-bold mb-2">50+</div>
+                <div className="text-xs sm:text-sm text-ksl-gray-light">Intégrations</div>
               </div>
             </div>
           </div>
@@ -357,25 +357,25 @@ export default function Fonctionnalites() {
       </section>
 
       {/* CTA Section */}
-      <section className="bg-gradient-to-br from-gray-900 to-ksl-black text-white py-20">
-        <div className="container-ksl text-center">
-          <h2 className="text-3xl md:text-4xl font-bold mb-6">
+      <section className="bg-gradient-to-br from-gray-900 to-ksl-black text-white py-12 sm:py-16 md:py-20">
+        <div className="container-ksl text-center px-4 sm:px-6 lg:px-8">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4 sm:mb-6">
             Prêt à découvrir toutes nos fonctionnalités ?
           </h2>
-          <p className="text-xl text-gray-300 mb-8 max-w-2xl mx-auto">
+          <p className="text-base sm:text-lg md:text-xl text-gray-300 mb-6 sm:mb-8 max-w-2xl mx-auto">
             Testez gratuitement notre plateforme et découvrez comment elle peut transformer votre logistique
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
             <Link
               to="/contact"
-              className="px-8 py-4 bg-ksl-red text-white rounded-xl hover:bg-ksl-red-dark transition-all duration-300 font-medium text-lg flex items-center justify-center space-x-2"
+              className="px-4 sm:px-6 md:px-8 py-3 sm:py-4 bg-ksl-red text-white rounded-xl hover:bg-ksl-red-dark transition-all duration-300 font-medium text-sm sm:text-base md:text-lg flex items-center justify-center space-x-2"
             >
               <span>Demander une démo</span>
-              <ArrowRight className="w-5 h-5" />
+              <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
             </Link>
             <Link
               to="/register"
-              className="px-8 py-4 bg-white text-ksl-red rounded-xl hover:bg-gray-100 transition-all duration-300 font-medium text-lg"
+              className="px-4 sm:px-6 md:px-8 py-3 sm:py-4 bg-white text-ksl-red rounded-xl hover:bg-gray-100 transition-all duration-300 font-medium text-sm sm:text-base md:text-lg"
             >
               Essai gratuit
             </Link>

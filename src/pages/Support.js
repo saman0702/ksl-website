@@ -197,25 +197,25 @@ export default function Support() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-dark-bg dark:to-dark-bg-secondary">
       {/* Hero Section */}
-      <section className="bg-gradient-to-br from-ksl-red via-ksl-red-dark to-ksl-black text-white py-20">
-        <div className="container-ksl text-center">
-          <h1 className="text-4xl md:text-6xl font-bold mb-6">
+      <section className="bg-gradient-to-br from-ksl-red via-ksl-red-dark to-ksl-black text-white py-12 sm:py-16 md:py-20">
+        <div className="container-ksl text-center px-4 sm:px-6 lg:px-8">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-6xl font-bold mb-4 sm:mb-6">
             Support & Aide
           </h1>
-          <p className="text-xl md:text-2xl text-ksl-gray-light mb-8 max-w-3xl mx-auto">
+          <p className="text-base sm:text-lg md:text-xl lg:text-2xl text-ksl-gray-light mb-6 sm:mb-8 max-w-3xl mx-auto px-4">
             Nous sommes là pour vous aider. Trouvez rapidement des réponses ou contactez notre équipe
           </p>
           
           {/* Barre de recherche */}
-          <div className="max-w-2xl mx-auto">
+          <div className="max-w-2xl mx-auto px-4">
             <div className="relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 sm:w-5 sm:h-5" />
               <input
                 type="text"
                 placeholder="Rechercher dans l'aide..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 bg-white text-gray-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-white/20"
+                className="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-4 bg-white text-gray-900 rounded-xl focus:outline-none focus:ring-2 focus:ring-white/20 text-sm sm:text-base"
               />
             </div>
           </div>
@@ -223,18 +223,18 @@ export default function Support() {
       </section>
 
       {/* Statistiques */}
-      <section className="py-16">
-        <div className="container-ksl">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+      <section className="py-12 sm:py-16">
+        <div className="container-ksl px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 md:gap-8">
             {supportStats.map((stat, index) => (
               <div key={index} className="text-center">
-                <div className="w-16 h-16 bg-gradient-to-br from-ksl-red to-ksl-red-dark rounded-2xl flex items-center justify-center mx-auto mb-4">
-                  <stat.icon className="w-8 h-8 text-white" />
+                <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-br from-ksl-red to-ksl-red-dark rounded-2xl flex items-center justify-center mx-auto mb-3 sm:mb-4">
+                  <stat.icon className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
                 </div>
-                <div className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-2">
+                <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-2">
                   {stat.number}
                 </div>
-                <div className="text-gray-600 dark:text-gray-300">
+                <div className="text-sm sm:text-base text-gray-600 dark:text-gray-300">
                   {stat.label}
                 </div>
               </div>
@@ -244,36 +244,36 @@ export default function Support() {
       </section>
 
       {/* Canaux de support */}
-      <section className="bg-white dark:bg-dark-bg-secondary py-20">
-        <div className="container-ksl">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+      <section className="bg-white dark:bg-dark-bg-secondary py-12 sm:py-16 md:py-20">
+        <div className="container-ksl px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12 sm:mb-16">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
               Comment nous contacter ?
             </h2>
-            <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+            <p className="text-base sm:text-lg md:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
               Choisissez le canal qui vous convient le mieux
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 md:gap-8">
             {supportChannels.map((channel, index) => (
               <div
                 key={index}
-                className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-dark-bg dark:to-dark-bg-tertiary rounded-2xl p-8 border border-gray-200 dark:border-gray-700 text-center"
+                className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-dark-bg dark:to-dark-bg-tertiary rounded-2xl p-4 sm:p-6 md:p-8 border border-gray-200 dark:border-gray-700 text-center"
               >
-                <div className={`w-16 h-16 bg-gradient-to-br ${channel.color} rounded-2xl flex items-center justify-center mx-auto mb-6`}>
-                  <channel.icon className="w-8 h-8 text-white" />
+                <div className={`w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-br ${channel.color} rounded-2xl flex items-center justify-center mx-auto mb-4 sm:mb-6`}>
+                  <channel.icon className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
                 </div>
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white mb-2">
                   {channel.title}
                 </h3>
-                <p className="text-gray-600 dark:text-gray-300 mb-4">
+                <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 mb-3 sm:mb-4">
                   {channel.description}
                 </p>
-                <div className="text-ksl-red font-medium mb-2">
+                <div className="text-ksl-red font-medium mb-2 text-sm sm:text-base">
                   {channel.contact}
                 </div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">
+                <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
                   {channel.availability}
                 </div>
               </div>
@@ -283,24 +283,24 @@ export default function Support() {
       </section>
 
       {/* FAQ */}
-      <section className="py-20">
-        <div className="container-ksl">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+      <section className="py-12 sm:py-16 md:py-20">
+        <div className="container-ksl px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12 sm:mb-16">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
               Questions Fréquentes
             </h2>
-            <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+            <p className="text-base sm:text-lg md:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
               Trouvez rapidement des réponses à vos questions
             </p>
           </div>
 
           <div className="max-w-4xl mx-auto">
             {faqData.map((category, categoryIndex) => (
-              <div key={categoryIndex} className="mb-12">
-                <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+              <div key={categoryIndex} className="mb-8 sm:mb-12">
+                <h3 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-4 sm:mb-6">
                   {category.category}
                 </h3>
-                <div className="space-y-4">
+                <div className="space-y-3 sm:space-y-4">
                   {category.questions.map((item, questionIndex) => {
                     const globalIndex = categoryIndex * category.questions.length + questionIndex;
                     return (
@@ -310,20 +310,20 @@ export default function Support() {
                       >
                         <button
                           onClick={() => handleFAQToggle(globalIndex)}
-                          className="w-full px-6 py-4 text-left flex items-center justify-between hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors duration-200"
+                          className="w-full px-4 sm:px-6 py-3 sm:py-4 text-left flex items-center justify-between hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors duration-200"
                         >
-                          <span className="font-medium text-gray-900 dark:text-white">
+                          <span className="font-medium text-gray-900 dark:text-white text-sm sm:text-base">
                             {item.question}
                           </span>
                           {activeFAQ === globalIndex ? (
-                            <ChevronUp className="w-5 h-5 text-ksl-red" />
+                            <ChevronUp className="w-4 h-4 sm:w-5 sm:h-5 text-ksl-red" />
                           ) : (
-                            <ChevronDown className="w-5 h-5 text-gray-400" />
+                            <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
                           )}
                         </button>
                         {activeFAQ === globalIndex && (
-                          <div className="px-6 pb-4">
-                            <p className="text-gray-600 dark:text-gray-300 leading-relaxed">
+                          <div className="px-4 sm:px-6 pb-3 sm:pb-4">
+                            <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
                               {item.answer}
                             </p>
                           </div>
@@ -339,35 +339,35 @@ export default function Support() {
       </section>
 
       {/* Ressources d'aide */}
-      <section className="bg-white dark:bg-dark-bg-secondary py-20">
-        <div className="container-ksl">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+      <section className="bg-white dark:bg-dark-bg-secondary py-12 sm:py-16 md:py-20">
+        <div className="container-ksl px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12 sm:mb-16">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
               Ressources d'aide
             </h2>
-            <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+            <p className="text-base sm:text-lg md:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
               Guides, tutoriels et documentation pour vous accompagner
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 md:gap-8">
             {helpResources.map((resource, index) => (
               <div
                 key={index}
-                className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-dark-bg dark:to-dark-bg-tertiary rounded-2xl p-8 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-2"
+                className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-dark-bg dark:to-dark-bg-tertiary rounded-2xl p-4 sm:p-6 md:p-8 border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-2"
               >
-                <div className={`w-16 h-16 bg-gradient-to-br ${resource.color} rounded-2xl flex items-center justify-center mx-auto mb-6`}>
-                  <resource.icon className="w-8 h-8 text-white" />
+                <div className={`w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-br ${resource.color} rounded-2xl flex items-center justify-center mx-auto mb-4 sm:mb-6`}>
+                  <resource.icon className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
                 </div>
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white mb-3 sm:mb-4">
                   {resource.title}
                 </h3>
-                <p className="text-gray-600 dark:text-gray-300 mb-6">
+                <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 mb-4 sm:mb-6">
                   {resource.description}
                 </p>
                 <a
                   href={resource.link}
-                  className="inline-flex items-center text-ksl-red hover:text-ksl-red-dark transition-colors duration-200"
+                  className="inline-flex items-center text-ksl-red hover:text-ksl-red-dark transition-colors duration-200 text-sm sm:text-base"
                 >
                   <span>Accéder</span>
                   <ArrowRight className="w-4 h-4 ml-2" />
@@ -379,21 +379,21 @@ export default function Support() {
       </section>
 
       {/* Formulaire de contact */}
-      <section className="py-20">
-        <div className="container-ksl">
+      <section className="py-12 sm:py-16 md:py-20">
+        <div className="container-ksl px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto">
-            <div className="bg-white dark:bg-dark-bg-secondary rounded-2xl shadow-lg p-8 md:p-12 border border-gray-200 dark:border-gray-700">
-              <div className="text-center mb-8">
-                <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+            <div className="bg-white dark:bg-dark-bg-secondary rounded-2xl shadow-lg p-4 sm:p-6 md:p-8 lg:p-12 border border-gray-200 dark:border-gray-700">
+              <div className="text-center mb-6 sm:mb-8">
+                <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-3 sm:mb-4">
                   Contactez notre équipe
                 </h2>
-                <p className="text-xl text-gray-600 dark:text-gray-300">
+                <p className="text-base sm:text-lg md:text-xl text-gray-600 dark:text-gray-300">
                   Notre équipe est là pour vous aider
                 </p>
               </div>
 
-              <form onSubmit={handleContactSubmit} className="space-y-6">
-                <div className="grid md:grid-cols-2 gap-6">
+              <form onSubmit={handleContactSubmit} className="space-y-4 sm:space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Nom complet *
@@ -403,7 +403,7 @@ export default function Support() {
                       required
                       value={contactForm.name}
                       onChange={(e) => setContactForm({...contactForm, name: e.target.value})}
-                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-dark-bg-tertiary text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-ksl-red"
+                      className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-dark-bg-tertiary text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-ksl-red text-sm sm:text-base"
                       placeholder="Votre nom"
                     />
                   </div>
@@ -416,7 +416,7 @@ export default function Support() {
                       required
                       value={contactForm.email}
                       onChange={(e) => setContactForm({...contactForm, email: e.target.value})}
-                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-dark-bg-tertiary text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-ksl-red"
+                      className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-dark-bg-tertiary text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-ksl-red text-sm sm:text-base"
                       placeholder="votre@email.com"
                     />
                   </div>
@@ -430,7 +430,7 @@ export default function Support() {
                     required
                     value={contactForm.subject}
                     onChange={(e) => setContactForm({...contactForm, subject: e.target.value})}
-                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-dark-bg-tertiary text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-ksl-red"
+                    className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-dark-bg-tertiary text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-ksl-red text-sm sm:text-base"
                   >
                     <option value="">Sélectionner un sujet</option>
                     <option value="expedition">Question sur l'expédition</option>
@@ -451,7 +451,7 @@ export default function Support() {
                     rows={6}
                     value={contactForm.message}
                     onChange={(e) => setContactForm({...contactForm, message: e.target.value})}
-                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-dark-bg-tertiary text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-ksl-red resize-none"
+                    className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-dark-bg-tertiary text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-ksl-red resize-none text-sm sm:text-base"
                     placeholder="Décrivez votre problème ou question..."
                   />
                 </div>
@@ -459,9 +459,9 @@ export default function Support() {
                 <div className="text-center">
                   <button
                     type="submit"
-                    className="px-8 py-4 bg-ksl-red text-white rounded-xl hover:bg-ksl-red-dark transition-all duration-300 font-medium text-lg flex items-center justify-center space-x-2 mx-auto"
+                    className="px-4 sm:px-6 md:px-8 py-3 sm:py-4 bg-ksl-red text-white rounded-xl hover:bg-ksl-red-dark transition-all duration-300 font-medium text-sm sm:text-base md:text-lg flex items-center justify-center space-x-2 mx-auto"
                   >
-                    <Send className="w-5 h-5" />
+                    <Send className="w-4 h-4 sm:w-5 sm:h-5" />
                     <span>Envoyer le message</span>
                   </button>
                 </div>

@@ -357,25 +357,25 @@ export default function DevenirRelais() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-dark-bg dark:to-dark-bg-secondary">
       {/* Hero Section */}
-      <section className="bg-gradient-to-br from-ksl-red via-ksl-red-dark to-ksl-black text-white py-20">
-        <div className="container-ksl text-center">
-          <h1 className="text-4xl md:text-6xl font-bold mb-6">
+      <section className="bg-gradient-to-br from-ksl-red via-ksl-red-dark to-ksl-black text-white py-12 sm:py-16 md:py-20">
+        <div className="container-ksl text-center px-4 sm:px-6 lg:px-8">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-6xl font-bold mb-4 sm:mb-6">
             Devenez Point Relais KSL
           </h1>
-          <p className="text-xl md:text-2xl text-ksl-gray-light mb-8 max-w-3xl mx-auto">
+          <p className="text-base sm:text-lg md:text-xl lg:text-2xl text-ksl-gray-light mb-6 sm:mb-8 max-w-3xl mx-auto px-4">
             Rejoignez notre réseau de plus de 500 points relais et développez votre activité avec des revenus supplémentaires
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
             <button
               onClick={() => document.getElementById('candidature').scrollIntoView({ behavior: 'smooth' })}
-              className="px-8 py-4 bg-white text-ksl-red rounded-xl hover:bg-gray-100 transition-all duration-300 font-medium text-lg flex items-center justify-center space-x-2"
+              className="px-4 sm:px-6 md:px-8 py-3 sm:py-4 bg-white text-ksl-red rounded-xl hover:bg-gray-100 transition-all duration-300 font-medium text-sm sm:text-base md:text-lg flex items-center justify-center space-x-2"
             >
               <span>Postuler maintenant</span>
-              <ArrowRight className="w-5 h-5" />
+              <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
             <Link
               to="/contact"
-              className="px-8 py-4 bg-white/10 text-white rounded-xl hover:bg-white/20 transition-all duration-300 font-medium text-lg"
+              className="px-4 sm:px-6 md:px-8 py-3 sm:py-4 bg-white/10 text-white rounded-xl hover:bg-white/20 transition-all duration-300 font-medium text-sm sm:text-base md:text-lg"
             >
               Nous contacter
             </Link>
@@ -384,30 +384,30 @@ export default function DevenirRelais() {
       </section>
 
       {/* Avantages Section */}
-      <section className="py-20">
-        <div className="container-ksl">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+      <section className="py-12 sm:py-16 md:py-20">
+        <div className="container-ksl px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12 sm:mb-16">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
               Pourquoi devenir Point Relais ?
             </h2>
-            <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+            <p className="text-base sm:text-lg md:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
               Découvrez tous les avantages de rejoindre notre réseau de points relais
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 md:gap-8">
             {benefits.map((benefit, index) => (
               <div
                 key={index}
-                className="bg-white dark:bg-dark-bg-secondary rounded-2xl p-8 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-2 border border-gray-200 dark:border-gray-700"
+                className="bg-white dark:bg-dark-bg-secondary rounded-2xl p-4 sm:p-6 md:p-8 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-2 border border-gray-200 dark:border-gray-700"
               >
-                <div className={`w-16 h-16 bg-gradient-to-br ${benefit.color} rounded-2xl flex items-center justify-center mb-6`}>
-                  <benefit.icon className="w-8 h-8 text-white" />
+                <div className={`w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-br ${benefit.color} rounded-2xl flex items-center justify-center mb-4 sm:mb-6`}>
+                  <benefit.icon className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
                 </div>
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white mb-3 sm:mb-4">
                   {benefit.title}
                 </h3>
-                <p className="text-gray-600 dark:text-gray-300 leading-relaxed">
+                <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
                   {benefit.description}
                 </p>
               </div>
@@ -417,30 +417,30 @@ export default function DevenirRelais() {
       </section>
 
       {/* Conditions Section */}
-      <section className="bg-white dark:bg-dark-bg-secondary py-20">
-        <div className="container-ksl">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+      <section className="bg-white dark:bg-dark-bg-secondary py-12 sm:py-16 md:py-20">
+        <div className="container-ksl px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12 sm:mb-16">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
               Conditions d'adhésion
             </h2>
-            <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+            <p className="text-base sm:text-lg md:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
               Les critères essentiels pour rejoindre notre réseau
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 md:gap-8">
             {requirements.map((requirement, index) => (
               <div
                 key={index}
-                className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-dark-bg dark:to-dark-bg-tertiary rounded-2xl p-8 border border-gray-200 dark:border-gray-700"
+                className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-dark-bg dark:to-dark-bg-tertiary rounded-2xl p-4 sm:p-6 md:p-8 border border-gray-200 dark:border-gray-700"
               >
-                <div className={`w-16 h-16 bg-gradient-to-br ${requirement.color} rounded-2xl flex items-center justify-center mb-6`}>
-                  <requirement.icon className="w-8 h-8 text-white" />
+                <div className={`w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-br ${requirement.color} rounded-2xl flex items-center justify-center mb-4 sm:mb-6`}>
+                  <requirement.icon className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
                 </div>
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
+                <h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white mb-3 sm:mb-4">
                   {requirement.title}
                 </h3>
-                <p className="text-gray-600 dark:text-gray-300 leading-relaxed">
+                <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 leading-relaxed">
                   {requirement.description}
                 </p>
               </div>
@@ -450,34 +450,34 @@ export default function DevenirRelais() {
       </section>
 
       {/* Process Section */}
-      <section className="py-20">
-        <div className="container-ksl">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+      <section className="py-12 sm:py-16 md:py-20">
+        <div className="container-ksl px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12 sm:mb-16">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
               Comment ça marche ?
             </h2>
-            <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+            <p className="text-base sm:text-lg md:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
               Un processus simple et rapide pour rejoindre notre réseau
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 md:gap-8">
             {process.map((step, index) => (
-              <div key={index} className="relative">
-                <div className="bg-white dark:bg-dark-bg-secondary rounded-2xl p-8 shadow-lg text-center border border-gray-200 dark:border-gray-700">
-                  <div className="w-16 h-16 bg-gradient-to-br from-ksl-red to-ksl-red-dark rounded-full flex items-center justify-center mx-auto mb-6">
-                    <span className="text-white font-bold text-xl">{step.step}</span>
+                              <div key={index} className="relative">
+                  <div className="bg-white dark:bg-dark-bg-secondary rounded-2xl p-4 sm:p-6 md:p-8 shadow-lg text-center border border-gray-200 dark:border-gray-700">
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-br from-ksl-red to-ksl-red-dark rounded-full flex items-center justify-center mx-auto mb-4 sm:mb-6">
+                      <span className="text-white font-bold text-lg sm:text-xl">{step.step}</span>
+                    </div>
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-br from-ksl-red to-ksl-red-dark rounded-2xl flex items-center justify-center mx-auto mb-4 sm:mb-6">
+                      <step.icon className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
+                    </div>
+                    <h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white mb-3 sm:mb-4">
+                      {step.title}
+                    </h3>
+                    <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300">
+                      {step.description}
+                    </p>
                   </div>
-                  <div className="w-16 h-16 bg-gradient-to-br from-ksl-red to-ksl-red-dark rounded-2xl flex items-center justify-center mx-auto mb-6">
-                    <step.icon className="w-8 h-8 text-white" />
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
-                    {step.title}
-                  </h3>
-                  <p className="text-gray-600 dark:text-gray-300">
-                    {step.description}
-                  </p>
-                </div>
                 {index < process.length - 1 && (
                   <div className="hidden lg:block absolute top-1/2 -right-4 transform -translate-y-1/2">
                     <ArrowRight className="w-8 h-8 text-ksl-red" />
@@ -490,38 +490,38 @@ export default function DevenirRelais() {
       </section>
 
       {/* Testimonials Section */}
-      <section className="bg-gradient-to-br from-ksl-red to-ksl-red-dark text-white py-20">
-        <div className="container-ksl">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">
+      <section className="bg-gradient-to-br from-ksl-red to-ksl-red-dark text-white py-12 sm:py-16 md:py-20">
+        <div className="container-ksl px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12 sm:mb-16">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4">
               Ils nous font confiance
             </h2>
-            <p className="text-xl text-ksl-gray-light max-w-2xl mx-auto">
+            <p className="text-base sm:text-lg md:text-xl text-ksl-gray-light max-w-2xl mx-auto">
               Découvrez les témoignages de nos points relais partenaires
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 md:gap-8">
             {testimonials.map((testimonial, index) => (
               <div
                 key={index}
-                className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20"
+                className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 sm:p-6 md:p-8 border border-white/20"
               >
                 <div className="flex items-center mb-4">
                   {[...Array(testimonial.rating)].map((_, i) => (
-                    <Star key={i} className="w-5 h-5 text-yellow-300 fill-current" />
+                    <Star key={i} className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-300 fill-current" />
                   ))}
                 </div>
-                <p className="text-lg mb-6 italic">
+                <p className="text-sm sm:text-base md:text-lg mb-4 sm:mb-6 italic">
                   "{testimonial.text}"
                 </p>
                 <div className="flex items-center">
-                  <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center mr-4">
-                    <Users className="w-6 h-6" />
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-full flex items-center justify-center mr-3 sm:mr-4">
+                    <Users className="w-5 h-5 sm:w-6 sm:h-6" />
                   </div>
                   <div>
-                    <div className="font-semibold">{testimonial.name}</div>
-                    <div className="text-ksl-gray-light text-sm">
+                    <div className="font-semibold text-sm sm:text-base">{testimonial.name}</div>
+                    <div className="text-ksl-gray-light text-xs sm:text-sm">
                       {testimonial.business} • {testimonial.location}
                     </div>
                   </div>
@@ -533,14 +533,14 @@ export default function DevenirRelais() {
       </section>
 
       {/* Candidature Section */}
-      <section id="candidature" className="py-20">
-        <div className="container-ksl">
+      <section id="candidature" className="py-12 sm:py-16 md:py-20">
+        <div className="container-ksl px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto">
-            <div className="text-center mb-16">
-              <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
+            <div className="text-center mb-12 sm:mb-16">
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
                 Candidature en ligne
               </h2>
-              <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+              <p className="text-base sm:text-lg md:text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
                 Remplissez ce formulaire pour rejoindre notre réseau de points relais
               </p>
             </div>
@@ -601,14 +601,14 @@ export default function DevenirRelais() {
                 </button>
               </div>
             ) : (
-              <div className="bg-white dark:bg-dark-bg-secondary rounded-2xl shadow-lg p-8 border border-gray-200 dark:border-gray-700">
-                <form onSubmit={handleSubmit} className="space-y-8">
+              <div className="bg-white dark:bg-dark-bg-secondary rounded-2xl shadow-lg p-4 sm:p-6 md:p-8 border border-gray-200 dark:border-gray-700">
+                <form onSubmit={handleSubmit} className="space-y-6 sm:space-y-8">
                   {/* Section 1: Informations du gérant */}
                   <div>
-                    <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-6 border-b border-gray-200 dark:border-gray-700 pb-2">
+                    <h3 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6 border-b border-gray-200 dark:border-gray-700 pb-2">
                       Informations du gérant
                     </h3>
-                    <div className="grid md:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                       {/* Prénom */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -622,7 +622,7 @@ export default function DevenirRelais() {
                             value={formData.first_name}
                             onChange={handleChange}
                             placeholder="Votre prénom"
-                            className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-ksl-red"
+                            className="w-full pl-10 pr-4 py-2 sm:py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-ksl-red"
                             required
                           />
                         </div>
@@ -735,7 +735,7 @@ export default function DevenirRelais() {
                     </div>
 
                     {/* Adresse du gérant - Pleine largeur */}
-                    <div className="mt-6">
+                    <div className="mt-4 sm:mt-6">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Adresse du gérant <span className="text-red-500">*</span>
                       </label>
@@ -747,7 +747,7 @@ export default function DevenirRelais() {
                           value={formData.address}
                           onChange={handleChange}
                           placeholder="Adresse personnelle du gérant"
-                          className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-ksl-red"
+                          className="w-full pl-10 pr-4 py-2 sm:py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-ksl-red"
                           required
                         />
                       </div>
@@ -756,10 +756,10 @@ export default function DevenirRelais() {
 
                   {/* Section 2: Informations du point relais */}
                   <div>
-                    <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-6 border-b border-gray-200 dark:border-gray-700 pb-2">
+                    <h3 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6 border-b border-gray-200 dark:border-gray-700 pb-2">
                       Informations du point relais
                     </h3>
-                    <div className="grid md:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                       {/* Nom du commerce */}
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -858,7 +858,7 @@ export default function DevenirRelais() {
                     </div>
 
                     {/* Village/Quartier - Pleine largeur */}
-                    <div className="mt-6">
+                    <div className="mt-4 sm:mt-6">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Village/Quartier <span className="text-red-500">*</span>
                       </label>
@@ -870,7 +870,7 @@ export default function DevenirRelais() {
                           value={formData.vilage}
                           onChange={handleChange}
                           placeholder="Ex: Cocody, Yopougon, etc."
-                          className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-ksl-red"
+                          className="w-full pl-10 pr-4 py-2 sm:py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-ksl-red"
                           required
                         />
                       </div>
@@ -879,7 +879,7 @@ export default function DevenirRelais() {
 
 
                     {/* Adresse du point relais */}
-                    <div className="mt-6">
+                    <div className="mt-4 sm:mt-6">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         Adresse du point relais <span className="text-red-500">*</span>
                       </label>
@@ -904,13 +904,13 @@ export default function DevenirRelais() {
 
                                      {/* Section 3: Types de colis */}
                    <div>
-                     <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-6 border-b border-gray-200 dark:border-gray-700 pb-2">
+                     <h3 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6 border-b border-gray-200 dark:border-gray-700 pb-2">
                        Types de colis acceptés
                      </h3>
-                     <p className="text-gray-600 dark:text-gray-300 mb-6">
+                     <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300 mb-4 sm:mb-6">
                        Sélectionnez les types de colis que votre point relais peut gérer
                      </p>
-                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                        {[
                          { value: 'standard', label: 'Standard', variant: 'default', emoji: '📦' },
                          { value: 'fragile', label: 'Fragile', variant: 'warning', emoji: '🔍' },
@@ -920,7 +920,7 @@ export default function DevenirRelais() {
                        ].map((type) => (
                          <label 
                            key={type.value} 
-                           className={`relative flex items-center p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 hover:shadow-md ${
+                           className={`relative flex items-center p-3 sm:p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 hover:shadow-md ${
                              formData.typeColis.includes(type.value)
                                ? 'border-ksl-red bg-ksl-red/5 dark:bg-ksl-red/10'
                                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
@@ -941,13 +941,13 @@ export default function DevenirRelais() {
                              }}
                              className="sr-only"
                            />
-                           <div className="flex items-center space-x-3 w-full">
-                             <span className="text-2xl">{type.emoji}</span>
+                           <div className="flex items-center space-x-2 sm:space-x-3 w-full">
+                             <span className="text-xl sm:text-2xl">{type.emoji}</span>
                              <div className="flex-1">
-                               <div className="font-medium text-gray-900 dark:text-white">
+                               <div className="font-medium text-gray-900 dark:text-white text-sm sm:text-base">
                                  {type.label}
                                </div>
-                               <div className="text-sm text-gray-500 dark:text-gray-400">
+                               <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
                                  {type.value === 'standard' && 'Colis standard'}
                                  {type.value === 'fragile' && 'Colis fragile'}
                                  {type.value === 'cold' && 'Colis réfrigéré'}
@@ -956,7 +956,7 @@ export default function DevenirRelais() {
                                </div>
                              </div>
                              {formData.typeColis.includes(type.value) && (
-                               <CheckCircle className="w-5 h-5 text-ksl-red" />
+                               <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-ksl-red" />
                              )}
                            </div>
                          </label>
@@ -974,17 +974,17 @@ export default function DevenirRelais() {
                     <button
                       type="submit"
                       disabled={isLoading}
-                      className="px-8 py-4 bg-ksl-red text-white rounded-xl hover:bg-ksl-red-dark transition-all duration-300 font-medium text-lg flex items-center justify-center space-x-2 mx-auto disabled:opacity-50"
+                      className="px-4 sm:px-6 md:px-8 py-3 sm:py-4 bg-ksl-red text-white rounded-xl hover:bg-ksl-red-dark transition-all duration-300 font-medium text-sm sm:text-base md:text-lg flex items-center justify-center space-x-2 mx-auto disabled:opacity-50"
                     >
                       {isLoading ? (
                         <>
-                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          <span>Envoi en cours...</span>
+                          <div className="w-4 h-4 sm:w-5 sm:h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span className="text-sm sm:text-base">Envoi en cours...</span>
                         </>
                       ) : (
                         <>
-                          <span>Envoyer ma candidature</span>
-                          <ArrowRight className="w-5 h-5" />
+                          <span className="text-sm sm:text-base">Envoyer ma candidature</span>
+                          <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
                         </>
                       )}
                     </button>
@@ -997,25 +997,25 @@ export default function DevenirRelais() {
       </section>
 
       {/* CTA Section */}
-      <section className="bg-gradient-to-br from-gray-900 to-ksl-black text-white py-20">
-        <div className="container-ksl text-center">
-          <h2 className="text-3xl md:text-4xl font-bold mb-6">
+      <section className="bg-gradient-to-br from-gray-900 to-ksl-black text-white py-12 sm:py-16 md:py-20">
+        <div className="container-ksl text-center px-4 sm:px-6 lg:px-8">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-4 sm:mb-6">
             Prêt à rejoindre notre réseau ?
           </h2>
-          <p className="text-xl text-gray-300 mb-8 max-w-2xl mx-auto">
+          <p className="text-base sm:text-lg md:text-xl text-gray-300 mb-6 sm:mb-8 max-w-2xl mx-auto">
             Rejoignez plus de 500 points relais qui font déjà confiance à KSL pour développer leur activité
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
             <button
               onClick={() => document.getElementById('candidature').scrollIntoView({ behavior: 'smooth' })}
-              className="px-8 py-4 bg-ksl-red text-white rounded-xl hover:bg-ksl-red-dark transition-all duration-300 font-medium text-lg flex items-center justify-center space-x-2"
+              className="px-4 sm:px-6 md:px-8 py-3 sm:py-4 bg-ksl-red text-white rounded-xl hover:bg-ksl-red-dark transition-all duration-300 font-medium text-sm sm:text-base md:text-lg flex items-center justify-center space-x-2"
             >
               <span>Postuler maintenant</span>
-              <ArrowRight className="w-5 h-5" />
+              <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
             <Link
               to="/contact"
-              className="px-8 py-4 bg-white text-ksl-red rounded-xl hover:bg-gray-100 transition-all duration-300 font-medium text-lg"
+              className="px-4 sm:px-6 md:px-8 py-3 sm:py-4 bg-white text-ksl-red rounded-xl hover:bg-gray-100 transition-all duration-300 font-medium text-sm sm:text-base md:text-lg"
             >
               Nous contacter
             </Link>
