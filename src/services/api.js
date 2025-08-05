@@ -13,7 +13,7 @@ const apiClient = axios.create({
     'Content-Type': 'application/json',
     Accept: 'application/json',
   },
-  withCredentials: process.env.NODE_ENV === 'production',
+  withCredentials: false, // Désactivé pour éviter les problèmes CORS en production
 });
 
 
@@ -161,13 +161,13 @@ export const expeditionAPI = {
 // Services de gestion des point realis
 export const relayAPI = {
   getAllRelays: async (params = {}) => {
-    console.log('🚛 [carrierAPI.getAllCarriers] → Paramètres:', params);
+    console.log('🏪 [relayAPI.getAllRelays] → Paramètres:', params);
     try {
       const response = await apiClient.get('/client/pointrelais/', { params });
-      console.log('✅ Transporteurs récupérés:', response.data);
+      console.log('✅ Points relais récupérés:', response.data);
       return response;
     } catch (error) {
-      console.error('❌ Erreur récupération transporteurs:', error);
+      console.error('❌ Erreur récupération points relais:', error);
       throw error;
     }
   },
@@ -178,7 +178,7 @@ export const carrierAPI = {
   getAllCarriers: async (params = {}) => {
     console.log('🚛 [carrierAPI.getAllCarriers] → Paramètres:', params);
     try {
-      const response = await apiClient.get('/transporteurs/', { params });
+      const response = await apiClient.get('/client/transporteur/', { params });
       console.log('✅ Transporteurs récupérés:', response.data);
       return response;
     } catch (error) {
