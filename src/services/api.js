@@ -189,5 +189,11 @@ export const carrierAPI = {
  
 };
 
+export const modepaiementAPI = {
+  initpaiement: (data) => apiClient.post('/paiement/', data),
+  paiementcheckin: (data) => apiClient.post('/paiement/check/', data),
+
+};
+
 
 export default apiClient; 

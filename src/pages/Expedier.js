@@ -28,15 +28,17 @@ import {
   Send,
   Database,
   Shield,
-  Globe
+  Globe,
+  RefreshCw
 } from 'lucide-react';
 import { Button, Card, Input, Badge, Alert, Modal, LocationSearch, ProgressBar, Tabs } from '../components/ui';
 import { cn } from '../utils/cn';
 import { useAuth } from '../contexts/AuthContext';
-import { relayAPI, carrierAPI, modepaiementAPI } from '../services/api';
+import { relayAPI, carrierAPI, modepaiementAPI,expeditionAPI } from '../services/api';
 import { calculateTariff, getCityZone, searchCities, CITY_ZONE_MAPPING } from '../services/tariffService';
 // import printService from '../services/printService';
 import toast from 'react-hot-toast';
+import PaymentRedirect from '../components/PaymentRedirect';
 
 // Types de véhicules avec spécifications poids et volume exactes
 const VEHICLE_TYPES = [
@@ -86,6 +88,23 @@ const Expedier = () => {
   const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
   
+  // Récupérer les données d'estimation depuis localStorage
+  const getEstimationData = () => {
+    try {
+      const storedData = localStorage.getItem('ksl_expedition_data');
+      if (storedData) {
+        const estimationData = JSON.parse(storedData);
+        console.log('✅ Données d\'estimation récupérées:', estimationData);
+        return estimationData;
+      }
+      console.log('ℹ️ Aucune donnée d\'estimation trouvée');
+      return null;
+    } catch (error) {
+      console.error('❌ Erreur récupération données d\'estimation:', error);
+      return null;
+    }
+  };
+  
   // 🚚 FONCTION UTILITAIRE : Récupérer les données utilisateur depuis localStorage
   const getUserData = () => {
     try {
@@ -123,7 +142,98 @@ const Expedier = () => {
   const [paymentMethodsError, setPaymentMethodsError] = useState(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentStep, setPaymentStep] = useState('idle'); // 'idle' | 'initializing' | 'success' | 'error'
+  const paymentCheckIntervalRef = React.useRef(null);
+  const [paymentPhoneNumber, setPaymentPhoneNumber] = useState('');
+  const [paymentCountryCode, setPaymentCountryCode] = useState('+225');
+  const [showPaymentRedirect, setShowPaymentRedirect] = useState(false);
+  const [paymentFinalStatus, setPaymentFinalStatus] = useState(null); // 'success' | 'pending' | 'failed'
+  const [paymentCreatedExpedition, setPaymentCreatedExpedition] = useState(null);
   const [pendingExpeditionData, setPendingExpeditionData] = useState(null);
+  const [useMyLocation, setUseMyLocation] = useState(false);
+  const [useMyLocationDelivery, setUseMyLocationDelivery] = useState(false);
+  const [selectedRelayPoint, setSelectedRelayPoint] = useState(null);
+  
+  // États pour les formats de colis
+  const [selectedPackageFormat, setSelectedPackageFormat] = useState('');
+  const [showCustomDimensions, setShowCustomDimensions] = useState(false);
+
+  // Formats de colis prédéfinis
+  const packageFormats = [
+    {
+      id: 'xs',
+      name: 'XS – Petit Colis',
+      description: 'Documents, accessoires, petits appareils',
+      dimensions: { length: 25, width: 20, height: 10 },
+      weight: 2,
+      volume: 5000,
+      examples: 'Documents, accessoires, petits appareils'
+    },
+    {
+      id: 's',
+      name: 'S – Colis Moyen',
+      description: 'Vêtements, petite électronique, articles ménagers',
+      dimensions: { length: 40, width: 25, height: 20 },
+      weight: 5,
+      volume: 20000,
+      examples: 'Vêtements, petite électronique, articles ménagers'
+    },
+    {
+      id: 'm',
+      name: 'M – Colis Standard',
+      description: 'Électroménager compact, produits alimentaires',
+      dimensions: { length: 50, width: 30, height: 30 },
+      weight: 15,
+      volume: 50000,
+      examples: 'Électroménager compact, produits alimentaires'
+    },
+    {
+      id: 'l',
+      name: 'L – Grand Colis',
+      description: 'Matériel professionnel, gros équipements',
+      dimensions: { length: 60, width: 40, height: 50 },
+      weight: 25,
+      volume: 120000,
+      examples: 'Matériel professionnel, gros équipements'
+    },
+    {
+      id: 'xl',
+      name: 'XL – Colis Spécial / Hors Gabarit',
+      description: 'Format personnalisé - saisie manuelle requise',
+      dimensions: { length: 0, width: 0, height: 0 },
+      weight: 0,
+      volume: 0,
+      examples: 'Format personnalisé - saisie manuelle requise'
+    }
+  ];
+
+  // Fonction pour gérer le changement de format de colis
+  const handlePackageFormatChange = (formatId) => {
+    setSelectedPackageFormat(formatId);
+    
+    if (formatId === 'xl') {
+      setShowCustomDimensions(true);
+      setCurrentItem(prev => ({
+        ...prev,
+        weight: '',
+        length: '',
+        width: '',
+        height: ''
+      }));
+    } else {
+      setShowCustomDimensions(false);
+      const format = packageFormats.find(f => f.id === formatId);
+      if (format) {
+        setCurrentItem(prev => ({
+          ...prev,
+          length: format.dimensions.length.toString(),
+          width: format.dimensions.width.toString(),
+          height: format.dimensions.height.toString(),
+          weight: format.weight.toString()
+        }));
+      }
+    }
+  };
 
   // 🚚 NOUVEAU : Récupérer le transporteur assigné depuis localStorage (optimisé avec useMemo)
   const assignedCarrier = React.useMemo(() => {
@@ -138,6 +248,41 @@ const Expedier = () => {
     
     return transporteur;
   }, [user]);
+
+  // Pré-remplir les données avec celles de l'estimation
+  useEffect(() => {
+    const estimationData = getEstimationData();
+    if (estimationData) {
+      console.log('🔄 Pré-remplissage avec les données d\'estimation:', estimationData);
+      
+      // Mettre à jour les données d'expédition avec celles de l'estimation
+      setExpeditionData(prev => ({
+        ...prev,
+        // Adresses
+        from_address: estimationData.pickupLocation?.address || estimationData.pickupLocation || '',
+        to_address: estimationData.deliveryLocation?.address || estimationData.deliveryLocation || '',
+        
+        // Dimensions et poids
+        weight: estimationData.weight || 0,
+        length: estimationData.dimensions?.length || 0,
+        width: estimationData.dimensions?.width || 0,
+        height: estimationData.dimensions?.height || 0,
+        
+        // Mode et service
+        mode_expedition: estimationData.deliveryMode === 'relais' ? 'relay_point' : 'home_delivery',
+        type_service: estimationData.serviceType || 'standard',
+        
+        // Valeur déclarée
+        declared_value: estimationData.declaredValue || 0,
+        
+        // Prix estimé
+        estimated_price: estimationData.estimatedPrice || 0
+      }));
+      
+      // Nettoyer les données du localStorage après utilisation
+      localStorage.removeItem('ksl_expedition_data');
+    }
+  }, []);
 
   // État pour l'expédition au format EVA (CORRIGÉ)
   const [expeditionData, setExpeditionData] = useState({
@@ -199,7 +344,7 @@ const Expedier = () => {
     packageType: 'standard',
     shippingMode: 'home_delivery',
     selectedRelayPoint: null,
-    selectedCarrier: user?.role === 'entreprise' ? 'assigned' : 'default',
+    selectedCarrier: '1', // Transporteur ID 1 par défaut
   });
 
   // Articles - état séparé pour faciliter la gestion
@@ -242,7 +387,22 @@ const Expedier = () => {
     try {
       setIsLoadingCarriers(true);
       const response = await carrierAPI.getAllCarriers();
-      setCarriers(response.data || []);
+      const data = response?.data;
+      const carriersList = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
+      setCarriers(carriersList);
+
+      // Sélection par défaut par NOM (l'API ne retourne pas d'ID)
+      if (carriersList.length > 0) {
+        const preferredName = 'EVA LIVRAISON';
+        const found = carriersList.find(c => (c?.nom || c?.name || '').toString().trim().toLowerCase() === preferredName.toLowerCase());
+        if (found && (found.nom || found.name)) {
+          updateExpeditionData('selectedCarrier', found.nom || found.name);
+          console.log('✅ Transporteur sélectionné par défaut:', found.nom || found.name);
+        } else {
+          updateExpeditionData('selectedCarrier', carriersList[0].nom || carriersList[0].name || '');
+          console.warn('⚠️ Transporteur préféré non trouvé, sélection du premier disponible');
+        }
+      }
     } catch (error) {
       console.error('❌ Erreur chargement transporteurs:', error);
       setCarriersError('Erreur lors du chargement des transporteurs');
@@ -251,13 +411,83 @@ const Expedier = () => {
     }
   };
 
+  // Fonction pour charger les points relais selon le type de colis
+  const loadRelayPoints = async () => {
+    setIsLoadingRelayPoints(true);
+    setRelayPointsError(null);
+    
+    try {
+      console.log('🏪 [loadRelayPoints] → Chargement de tous les points relais...');
+      
+      const response = await relayAPI.getAllRelays();
+      console.log('✅ Points relais récupérés:', response.data);
+      console.log('📊 Nombre de points relais trouvés:', response.data?.length || 0);
+      
+      // Transformer les données pour correspondre au format attendu
+      let transformedRelayPoints = [];
+      
+      if (response?.data?.results) {
+        // Format avec pagination
+        transformedRelayPoints = response.data.results.map(relay => ({
+          id: relay.id,
+          name: relay.nom || relay.name,
+          address: relay.adresse || relay.address,
+          phone: relay.gerant?.phone || relay.phone || 'N/A',
+          acceptedTypes: relay.typeColis || relay.accepted_types || ['standard'],
+          city: relay.ville || relay.city,
+          village: relay.vilage || relay.village,
+          openingHours: relay.horaires_ouverture || relay.opening_hours,
+          status: relay.statut || relay.status,
+          latitude: relay.latitude,
+          longitude: relay.longitude,
+          description: relay.description || '',
+          capacity: relay.capacite || relay.capacity || 50
+        }));
+      } else if (response?.data && Array.isArray(response.data)) {
+        // Format direct (tableau)
+        transformedRelayPoints = response.data.map(relay => ({
+          id: relay.id,
+          name: relay.nom || relay.name,
+          address: relay.adresse || relay.address,
+          phone: relay.gerant?.phone || relay.phone || 'N/A',
+          acceptedTypes: relay.typeColis || relay.accepted_types || ['standard'],
+          city: relay.ville || relay.city,
+          village: relay.vilage || relay.village,
+          openingHours: relay.horaires_ouverture || relay.opening_hours,
+          status: relay.statut || relay.status,
+          latitude: relay.latitude,
+          longitude: relay.longitude,
+          description: relay.description || '',
+          capacity: relay.capacite || relay.capacity || 50
+        }));
+      } else {
+        console.warn('⚠️ Format de réponse inattendu pour les points relais:', response);
+        transformedRelayPoints = [];
+      }
+      
+      // Filtrer seulement les points relais actifs
+      const activeRelayPoints = transformedRelayPoints.filter(relay => 
+        relay.status === 'actif' || relay.status === 'active'
+      );
+      
+      setRelayPoints(activeRelayPoints);
+      console.log('✅ Points relais actifs chargés:', activeRelayPoints.length);
+      
+    } catch (error) {
+      console.error('❌ Erreur chargement points relais:', error);
+      setRelayPointsError('Impossible de charger les points relais');
+    } finally {
+      setIsLoadingRelayPoints(false);
+    }
+  };
+
   // 📍 Gestion des adresses
   const handlePickupLocationSelect = (location) => {
     setExpeditionData(prev => ({
       ...prev,
       from_address: location.address,
-      from_latitude: location.latitude.toString(),
-      from_longitude: location.longitude.toString()
+      from_latitude: location.latitude?.toString() || '',
+      from_longitude: location.longitude?.toString() || ''
     }));
   };
 
@@ -265,8 +495,8 @@ const Expedier = () => {
     setExpeditionData(prev => ({
       ...prev,
       to_address: location.address,
-      to_latitude: location.latitude.toString(),
-      to_longitude: location.longitude.toString()
+      to_latitude: location.latitude?.toString() || '',
+      to_longitude: location.longitude?.toString() || ''
     }));
   };
 
@@ -356,6 +586,21 @@ const Expedier = () => {
     loadCarriers();
   }, []);
 
+  // Charger les points relais au montage
+  useEffect(() => {
+    loadRelayPoints();
+  }, []);
+
+  // Filtrage des points relais selon le type de colis choisi
+  const filteredRelayPoints = relayPoints.filter(relay => 
+    relay.acceptedTypes && relay.acceptedTypes.includes(expeditionData.packageType || 'standard')
+  );
+
+  // Mettre à jour les coordonnées GPS selon le mode d'expédition
+  useEffect(() => {
+    updateCoordinatesForMode();
+  }, [expeditionData.shippingMode, selectedRelayPoint, useMyLocationDelivery]);
+
   // Pré-remplissage automatique des infos expéditeur avec l'utilisateur connecté
   useEffect(() => {
     const userData = getUserData();
@@ -367,6 +612,15 @@ const Expedier = () => {
         customer_email: userData.email || '',
         customer_phone_number: userData.phone || '+225'
       }));
+      // Pré-remplir le téléphone de paiement si disponible
+      if (!paymentPhoneNumber && (userData.phone || '').startsWith('+')) {
+        const digits = (userData.phone || '').replace(/\D/g, '');
+        // suppose +225XXXXXXXX
+        if (digits.length >= 11) {
+          setPaymentCountryCode('+225');
+          setPaymentPhoneNumber(digits.slice(-8));
+        }
+      }
     }
   }, [user]);
 
@@ -396,6 +650,10 @@ const Expedier = () => {
       quantity: 1
     });
 
+    // Réinitialiser le sélecteur de format de colis
+    setSelectedPackageFormat('');
+    setShowCustomDimensions(false);
+
     toast.success('Article ajouté avec succès');
   };
 
@@ -405,6 +663,38 @@ const Expedier = () => {
       pickup_items: prev.pickup_items.filter((_, i) => i !== index)
     }));
   };
+
+  // Déterminer automatiquement le véhicule selon le poids total des articles
+  const getVehicleIdForWeight = (totalWeight) => {
+    if (totalWeight == null || isNaN(totalWeight)) return expeditionData.vehicle_type_id;
+    // Parcours des types définis
+    for (const v of VEHICLE_TYPES) {
+      const minW = Number(v.min_weight) || 0;
+      const maxW = Number(v.max_weight);
+      if (typeof maxW === 'number' && isFinite(maxW)) {
+        if (totalWeight >= minW && totalWeight < maxW) return v.id;
+      } else {
+        // Pas de borne supérieure finie
+        if (totalWeight >= minW) return v.id;
+      }
+    }
+    // Fallback sur véhicule actuel si aucun match
+    return expeditionData.vehicle_type_id;
+  };
+
+  useEffect(() => {
+    // Recalcul du poids total à chaque changement d'articles
+    const totalWeight = (expeditionData.pickup_items || []).reduce((sum, item) => {
+      const w = parseFloat(item?.weight);
+      const q = parseInt(item?.quantity) || 1;
+      return sum + (isNaN(w) ? 0 : w) * q;
+    }, 0);
+
+    const targetVehicleId = getVehicleIdForWeight(totalWeight);
+    if (targetVehicleId && targetVehicleId !== expeditionData.vehicle_type_id) {
+      updateExpeditionData('vehicle_type_id', targetVehicleId);
+    }
+  }, [expeditionData.pickup_items]);
 
   const validateStep = (step) => {
     switch (step) {
@@ -427,7 +717,14 @@ const Expedier = () => {
 
   const handleNextStep = () => {
     if (validateStep(currentStep)) {
-      setCurrentStep(prev => prev + 1);
+      setCurrentStep(prev => {
+        const next = prev + 1;
+        // Auto-chargement des modes de paiement à l'arrivée sur l'étape 4
+        if (next === 4 && !isLoadingPaymentMethods) {
+          loadPaymentMethods();
+        }
+        return next;
+      });
     } else {
       toast.error('Veuillez remplir tous les champs obligatoires');
     }
@@ -453,12 +750,12 @@ const Expedier = () => {
         (position) => {
           const { latitude, longitude } = position.coords;
           if (type === 'from') {
-            updateExpeditionData('from_latitude', latitude.toString());
-            updateExpeditionData('from_longitude', longitude.toString());
+            updateExpeditionData('from_latitude', latitude?.toString() || '');
+            updateExpeditionData('from_longitude', longitude?.toString() || '');
             toast.success('Position de ramassage récupérée !');
           } else if (type === 'to') {
-            updateExpeditionData('to_latitude', latitude.toString());
-            updateExpeditionData('to_longitude', longitude.toString());
+            updateExpeditionData('to_latitude', latitude?.toString() || '');
+            updateExpeditionData('to_longitude', longitude?.toString() || '');
             toast.success('Position de livraison récupérée !');
           }
         },
@@ -469,6 +766,201 @@ const Expedier = () => {
       );
     } else {
       toast.error('Géolocalisation non supportée par votre navigateur');
+    }
+  };
+
+  // Fonction pour mettre à jour les coordonnées GPS selon le mode d'expédition
+  const updateCoordinatesForMode = () => {
+    if (expeditionData.shippingMode === 'relay_point' && selectedRelayPoint) {
+      // Mode point relais : utiliser les coordonnées du point relais sélectionné
+      updateExpeditionData('to_latitude', selectedRelayPoint.latitude?.toString() || '');
+      updateExpeditionData('to_longitude', selectedRelayPoint.longitude?.toString() || '');
+      console.log('📍 Coordonnées GPS mises à jour avec celles du point relais:', selectedRelayPoint.latitude, selectedRelayPoint.longitude);
+    } else if (expeditionData.shippingMode === 'home_delivery') {
+      // Mode livraison à domicile : utiliser la géolocalisation si disponible
+      if (useMyLocationDelivery) {
+        getCurrentLocation('to');
+      }
+    }
+  };
+
+  // 🌍 Détection pays via IP (simplifié)
+  const detectUserCountry = async () => {
+    try {
+      const response = await fetch('https://ipapi.co/json/');
+      if (response.ok) {
+        const data = await response.json();
+        const detected = data.country_code;
+        const SUPPORTED = ['CI','KE','BF','GN','GA','ML','SN','BJ','CM'];
+        return SUPPORTED.includes(detected) ? detected : 'CI';
+      }
+    } catch (e) {
+      // ignore and fallback
+    }
+    return 'CI';
+  };
+
+  // 💳 Charger les modes de paiement (Clapay)
+  const getPaymentIcon = (operator) => {
+    if (!operator) return '/OM.png';
+    const op = operator.toLowerCase();
+    if (op.includes('wave')) return '/WAVE.png';
+    if (op.includes('orange') || op.includes('om')) return '/OM.png';
+    if (op.includes('mtn')) return '/MTN.png';
+    if (op.includes('moov')) return '/MOOV.png';
+    if (op.includes('free')) return '/WAVE.png';
+    if (op.includes('emoney')) return '/WAVE.png';
+    if (op.includes('freemoney')) return '/WAVE.png';
+    if (op.includes('airtel')) return '/MTN.png';
+    if (op.includes('visa')) return '/OM.png';
+    if (op.includes('mastercard')) return '/OM.png';
+    return '/OM.png';
+  };
+
+  const getPaymentType = (operator) => {
+    if (!operator) return 'autre';
+    const op = operator.toLowerCase();
+    if (op.includes('wave') || op.includes('orange') || op.includes('mtn') || op.includes('moov') || op.includes('free') || op.includes('emoney') || op.includes('freemoney') || op.includes('airtel')) return 'mobile_money';
+    if (op.includes('visa') || op.includes('mastercard')) return 'card';
+    return 'autre';
+  };
+
+  const loadPaymentMethods = async () => {
+    setIsLoadingPaymentMethods(true);
+    try {
+      const userCountry = await detectUserCountry();
+      const countryCode = userCountry; // déjà code ISO
+      const clapayUrl = `https://nowallet-api.mpayment.africa/nowallet/api/fees/by/country?country=${countryCode}`;
+      const response = await fetch(clapayUrl, {
+        method: 'GET',
+        headers: {
+          accept: 'application/json',
+          Authorization: 'Bearer d41c1b19dce70da75aa3701887dff1aa14f2b7e082a700b2aa94e1427d7ec3e01b8e83090e89e41430161d46e2fbbbaa4c048285625d6dbacafbc8c6efaf5cd674d2e0b3df0181a6492abfd3f9e560b0707a89bb98dfe542f0aea0e59908763b',
+        },
+      });
+      if (!response.ok) throw new Error(`Erreur API Clapay: ${response.status}`);
+      const clapayData = await response.json();
+      if (Array.isArray(clapayData)) {
+        const transformed = clapayData.map((method, index) => ({
+          id: method.id || index + 1,
+          nom: method.operator || method.description || 'Méthode de paiement',
+          icone: getPaymentIcon(method.operator),
+          description: method.description || `${method.operator} - ${method.currency}`,
+          montant_min: 0,
+          montant_max: 999999999,
+          type: getPaymentType(method.operator),
+          clapayData: {
+            fee_cashin: method.fee_cashin,
+            fee_cashout: method.fee_cashout,
+            fee_merchant: method.fee_merchant,
+            currency: method.currency,
+            country: method.country,
+            merchant: method.merchant,
+          },
+        }));
+        setPaymentMethods(transformed);
+        if (transformed.length > 0 && !selectedPaymentMethod) setSelectedPaymentMethod(transformed[0]);
+        setPaymentMethodsError(null);
+      } else {
+        throw new Error('Format Clapay invalide');
+      }
+    } catch (err) {
+      setPaymentMethodsError(err.message);
+      const fallback = [
+        { id: 1, nom: 'Espèces', icone: '💵', description: 'Paiement en espèces à la livraison', type: 'cash' },
+        { id: 2, nom: 'Orange Money', icone: '🟠', description: 'Paiement mobile Orange Money', type: 'mobile_money' },
+        { id: 3, nom: 'Carte Bancaire', icone: '💳', description: 'Paiement par carte bancaire', type: 'card' },
+      ];
+      setPaymentMethods(fallback);
+      setSelectedPaymentMethod(fallback[0]);
+    } finally {
+      setIsLoadingPaymentMethods(false);
+    }
+  };
+
+  const checkPaymentStatus = async (signature) => {
+    try {
+      const response = await modepaiementAPI.paiementcheckin({ signature });
+      const paymentData = response.data;
+      if (paymentData.status === 'SUCCESSFUL') {
+        if (paymentCheckIntervalRef.current) {
+          clearInterval(paymentCheckIntervalRef.current);
+          paymentCheckIntervalRef.current = null;
+        }
+        await createExpeditionAfterPayment(paymentData);
+        setPaymentFinalStatus('success');
+        setShowPaymentRedirect(true);
+      } else if (paymentData.status === 'FAILED' || paymentData.status === 'CLOSED') {
+        if (paymentCheckIntervalRef.current) {
+          clearInterval(paymentCheckIntervalRef.current);
+          paymentCheckIntervalRef.current = null;
+        }
+        setPaymentStep('error');
+        setPaymentFinalStatus('failed');
+        setShowPaymentRedirect(true);
+      }
+    } catch (error) {
+      // keep polling
+    }
+  };
+
+  const createExpeditionAfterPayment = async (paymentData) => {
+    try {
+      const payload = {
+        ...expeditionData,
+        mode_paiement: selectedPaymentMethod?.nom,
+        payment_status: paymentData.status,
+        signature: paymentData.signature,
+      };
+      const response = await expeditionAPI.createExpedition(payload);
+      toast.success('Expédition créée après paiement');
+      setPaymentStep('success');
+      setCurrentStep(5);
+      setPaymentCreatedExpedition(response?.data);
+    } catch (e) {
+      toast.error("Erreur création d'expédition après paiement");
+      setPaymentStep('error');
+      setPaymentFinalStatus('failed');
+      setShowPaymentRedirect(true);
+    }
+  };
+
+  const handlePaymentValidation = async () => {
+    if (!selectedPaymentMethod) {
+      alert('❌ Veuillez sélectionner un mode de paiement');
+      return;
+    }
+    try {
+      setPaymentStep('initializing');
+      const phoneDigits = (paymentPhoneNumber || '').replace(/\D/g, '');
+      const paymentData = {
+        amount: Math.max(parseFloat(quoteData?.finalPrice || 0), 1),
+        country_code: paymentCountryCode.replace('+','') || '225',
+        operator_code: (selectedPaymentMethod?.nom || '').toUpperCase(),
+        phone_number: phoneDigits,
+        description: 'Paiement expédition',
+      };
+      if (!paymentData.amount) throw new Error('Montant invalide');
+      if (!paymentData.country_code) throw new Error('Code pays manquant');
+      if (!paymentData.operator_code) throw new Error('Opérateur manquant');
+      if (!paymentData.phone_number) throw new Error('Téléphone manquant');
+
+      const response = await modepaiementAPI.initpaiement(paymentData);
+      setPaymentStep('success');
+      setExpeditionData(prev => ({ ...prev, mode_paiement: selectedPaymentMethod?.nom }));
+      const paymentUrl = response?.data?.payment_url;
+      const signature = response?.data?.signature;
+      if (!paymentUrl) throw new Error("Lien de paiement manquant");
+      if (typeof window !== 'undefined') window.open(paymentUrl, '_blank');
+      if (signature) {
+        if (paymentCheckIntervalRef.current) clearInterval(paymentCheckIntervalRef.current);
+        paymentCheckIntervalRef.current = setInterval(() => {
+          checkPaymentStatus(signature);
+        }, 5000);
+      }
+    } catch (err) {
+      setPaymentStep('error');
+      toast.error("Erreur initialisation paiement");
     }
   };
 
@@ -637,55 +1129,72 @@ const Expedier = () => {
                       placeholder="Rechercher l'adresse de ramassage..."
                       className="w-full"
                     />
+                    
+                    {/* Toggle Ma position */}
+                    <div className="flex items-center justify-between mt-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center space-x-3">
+                        <LocateFixed className="w-5 h-5 text-ksl-red" />
+                        <div>
+                          <label htmlFor="useMyLocation" className="text-sm font-medium text-gray-900 dark:text-white">
+                            Utiliser ma position GPS
+                          </label>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Récupérer automatiquement mes coordonnées
+                          </p>
+                        </div>
+                      </div>
+                      
+                      {/* Toggle Switch */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newValue = !useMyLocation;
+                          setUseMyLocation(newValue);
+                          if (newValue) {
+                            getCurrentLocation('from');
+                          }
+                        }}
+                        className={`
+                          relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-ksl-red focus:ring-offset-2
+                          ${useMyLocation 
+                            ? 'bg-ksl-red' 
+                            : 'bg-gray-200 dark:bg-gray-700'
+                          }
+                        `}
+                      >
+                        <span
+                          className={`
+                            inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ease-in-out
+                            ${useMyLocation ? 'translate-x-6' : 'translate-x-1'}
+                          `}
+                        />
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Coordonnées GPS Expéditeur */}
-                  <Card className="p-3 sm:p-4 bg-blue-50 dark:bg-blue-900/20 shadow-md hover:shadow-lg transition-all duration-300">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 space-y-2 sm:space-y-0">
-                      <h3 className="font-medium text-gray-900 dark:text-white flex items-center">
-                        <Target className="w-4 h-4 mr-2 text-ksl-red" />
-                        <span className="text-sm sm:text-base">Coordonnées GPS de ramassage *</span>
-                      </h3>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => getCurrentLocation('from')}
-                      >
-                        <LocateFixed className="w-4 h-4 mr-1" />
-                        <span className="text-xs sm:text-sm">Ma position</span>
-                      </Button>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                      <Input
-                        label="Latitude *"
-                        type="number"
-                        step="any"
-                        value={expeditionData.from_latitude}
-                        onChange={(e) => updateExpeditionData('from_latitude', e.target.value)}
-                        placeholder="5.336987"
-                      />
-                      <Input
-                        label="Longitude *"
-                        type="number"
-                        step="any"
-                        value={expeditionData.from_longitude}
-                        onChange={(e) => updateExpeditionData('from_longitude', e.target.value)}
-                        placeholder="-4.008215"
-                      />
-                    </div>
-                    
-                    {expeditionData.from_latitude && expeditionData.from_longitude && (
-                      <Alert variant="success" className="mt-3">
-                        <CheckCircle className="w-4 h-4" />
-                        Position confirmée: {expeditionData.from_latitude}, {expeditionData.from_longitude}
-                      </Alert>
-                    )}
-                  </Card>
+                  {/* Coordonnées GPS Expéditeur - CACHÉES MAIS RÉCUPÉRÉES EN ARRIÈRE-PLAN */}
+                  <div className="hidden">
+                    <Input
+                      label="Latitude *"
+                      type="number"
+                      step="any"
+                      value={expeditionData.from_latitude}
+                      onChange={(e) => updateExpeditionData('from_latitude', e.target.value)}
+                      placeholder="5.336987"
+                    />
+                    <Input
+                      label="Longitude *"
+                      type="number"
+                      step="any"
+                      value={expeditionData.from_longitude}
+                      onChange={(e) => updateExpeditionData('from_longitude', e.target.value)}
+                      placeholder="-4.008215"
+                    />
+                  </div>
                 </div>
 
                 {/* Séparateur visuel */}
-                <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+                <div className="hidden border-t border-gray-200 dark:border-gray-700 pt-6">
                   <div className="flex items-center justify-center mb-6">
                     <div className="bg-gray-100 dark:bg-gray-800 px-4 py-2 rounded-full">
                       <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
@@ -705,13 +1214,52 @@ const Expedier = () => {
                   </div>
 
                   {/* Zone Côte d'Ivoire FIXE */}
-                  <Alert variant="info">
+                  {/* <Alert variant="info">
                     <Info className="w-4 h-4" />
                     <div>
                       <p className="font-medium">Zone de livraison: Côte d'Ivoire</p>
                       <p className="text-sm">Livraison disponible sur tout le territoire ivoirien</p>
                     </div>
-                  </Alert>
+                  </Alert> */}
+
+                  {/* Transporteur */}
+                  <div className="hidden mb-4 sm:mb-6 p-3 sm:p-4 bg-gray-50 dark:bg-gray-800 rounded-lg shadow-md">
+                    <label className="block text-sm font-medium text-white dark:text-white mb-3">
+                      🚛 Transporteur
+                      {isLoadingCarriers && <Loader className="w-4 h-4 ml-2 animate-spin inline" />}
+                    </label>
+                    
+                    {carriersError && (
+                      <Alert variant="error" className="mb-3">
+                        <AlertCircle className="w-4 h-4" />
+                        {carriersError}
+                      </Alert>
+                    )}
+                    
+                    <select
+                      value={expeditionData.selectedCarrier || ''}
+                      onChange={e => updateExpeditionData('selectedCarrier', e.target.value)}
+                      className="block w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 bg-white dark:bg-dark-bg-secondary focus:outline-none focus:ring-2 focus:ring-ksl-red focus:border-ksl-red transition-all duration-300 shadow-sm hover:shadow-md"
+                      disabled={true}
+                    >
+                      <option value="">Sélectionnez un transporteur...</option>
+                      {carriers.map(carrier => (
+                        <option key={(carrier.nom || carrier.name)} value={(carrier.nom || carrier.name)}>
+                          {carrier.nom || carrier.name}
+                        </option>
+                      ))}
+                    </select>
+                    
+                    <p className="text-xs text-gray-500 mt-2">
+                      Transporteur ID 1 sélectionné par défaut
+                    </p>
+                    
+                    {carriers.length === 0 && !isLoadingCarriers && (
+                      <p className="text-sm text-gray-500 mt-2">
+                        Aucun transporteur disponible pour le moment.
+                      </p>
+                    )}
+                  </div>
 
                   {/* Type de colis */}
                   <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-gray-50 dark:bg-gray-800 rounded-lg shadow-md">
@@ -720,11 +1268,11 @@ const Expedier = () => {
                     </label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3">
                       {[
-                        { value: 'standard', label: 'Standard', emoji: '📦' },
-                        { value: 'fragile', label: 'Fragile', emoji: '🔍' },
-                        { value: 'cold', label: 'Froid', emoji: '❄️' },
-                        { value: 'secured', label: 'Sécurisé', emoji: '🔒' },
-                        { value: 'large_volume', label: 'Gros volume', emoji: '📏' }
+                         { value: 'standard', label: 'Standard', variant: 'default', emoji: '📦' },
+                         { value: 'fragile', label: 'Fragile', variant: 'warning', emoji: '🔍' },
+                         { value: 'cold', label: 'Froid', variant: 'info', emoji: '❄️' },
+                         { value: 'secure', label: 'Sécurisé', variant: 'error', emoji: '🔒' },
+                         { value: 'large', label: 'Gros volume', variant: 'success', emoji: '📏' }
                       ].map(type => (
                         <button
                           key={type.value}
@@ -791,105 +1339,191 @@ const Expedier = () => {
                     </p>
                   </div>
 
-                  {/* Transporteur */}
-                  <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-gray-50 dark:bg-gray-800 rounded-lg shadow-md">
-                    <label className="block text-sm font-medium text-white dark:text-white mb-3">
-                      🚛 Transporteur
-                      {isLoadingCarriers && <Loader className="w-4 h-4 ml-2 animate-spin inline" />}
-                    </label>
-                    
-                    {carriersError && (
-                      <Alert variant="error" className="mb-3">
-                        <AlertCircle className="w-4 h-4" />
-                        {carriersError}
-                      </Alert>
-                    )}
-                    
-                    <select
-                      value={expeditionData.selectedCarrier || ''}
-                      onChange={e => updateExpeditionData('selectedCarrier', e.target.value)}
-                      className="block w-full px-4 py-3 border-2 border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 bg-white dark:bg-dark-bg-secondary focus:outline-none focus:ring-2 focus:ring-ksl-red focus:border-ksl-red transition-all duration-300 shadow-sm hover:shadow-md"
-                      disabled={user?.role === 'entreprise' || isLoadingCarriers}
-                    >
-                      <option value="">Sélectionnez un transporteur...</option>
-                      {carriers.map(carrier => (
-                        <option key={carrier.id} value={carrier.id}>
-                          {carrier.nom}
-                        </option>
-                      ))}
-                    </select>
-                    
-                    <p className="text-xs text-gray-500 mt-2">
-                      Transporteur assigné à votre compte
-                    </p>
-                    
-                    {carriers.length === 0 && !isLoadingCarriers && (
-                      <p className="text-sm text-gray-500 mt-2">
-                        Aucun transporteur disponible pour le moment.
+                  {/* Sélecteur de points relais - affiché seulement si mode relay_point */}
+                  {expeditionData.shippingMode === 'relay_point' && (
+                    <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg shadow-md border border-blue-200 dark:border-blue-700">
+                      <label className="block text-sm font-medium text-blue-900 dark:text-blue-100 mb-3">
+                        🏪 Point relais *
+                        {isLoadingRelayPoints && <Loader className="w-4 h-4 ml-2 animate-spin inline" />}
+                      </label>
+                      
+                      {relayPointsError && (
+                        <Alert variant="error" className="mb-3">
+                          <AlertCircle className="w-4 h-4" />
+                          {relayPointsError}
+                        </Alert>
+                      )}
+                      
+                      <select
+                        value={selectedRelayPoint?.id || ''}
+                        onChange={(e) => {
+                          const selectedId = e.target.value;
+                          const relay = filteredRelayPoints.find(r => r.id && r.id.toString() === selectedId);
+                          setSelectedRelayPoint(relay);
+                          
+                          if (relay) {
+                            // Mettre à jour l'adresse de livraison avec les infos du point relais
+                            updateExpeditionData('to_address', relay.address || relay.adresse);
+                            updateExpeditionData('recipient_first_name', relay.name || relay.nom || '');
+                            updateExpeditionData('recipient_last_name', 'Point Relais');
+                            updateExpeditionData('recipient_phone', relay.phone || relay.telephone || '');
+                            
+                            // Mettre à jour les coordonnées GPS du point relais
+                            updateExpeditionData('to_latitude', relay.latitude?.toString() || '');
+                            updateExpeditionData('to_longitude', relay.longitude?.toString() || '');
+                            
+                            console.log('📍 Point relais sélectionné:', relay);
+                            console.log('📍 Coordonnées GPS du point relais:', relay.latitude, relay.longitude);
+                          }
+                        }}
+                        className="block w-full px-4 py-3 border-2 border-blue-300 dark:border-blue-600 rounded-lg text-blue-900 dark:text-blue-100 bg-white dark:bg-dark-bg-secondary focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300 shadow-sm hover:shadow-md"
+                        disabled={isLoadingRelayPoints}
+                      >
+                        <option value="">Sélectionnez un point relais... ({filteredRelayPoints.length} compatibles)</option>
+                        {filteredRelayPoints.map(relay => (
+                          <option key={relay.id || 'unknown'} value={relay.id || ''}>
+                            {relay.name || relay.nom} - {relay.address || relay.adresse}
+                          </option>
+                        ))}
+                      </select>
+                      
+                      {selectedRelayPoint && (
+                        <div className="mt-3 p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                          <div className="flex items-start space-x-3">
+                            <div className="flex-shrink-0">
+                              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                                <span className="text-white text-sm font-bold">🏪</span>
+                              </div>
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                                {selectedRelayPoint.nom || selectedRelayPoint.name}
+                              </h4>
+                              <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                                {selectedRelayPoint.adresse || selectedRelayPoint.address}
+                              </p>
+                              {selectedRelayPoint.telephone || selectedRelayPoint.phone && (
+                                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                                  📞 {selectedRelayPoint.telephone || selectedRelayPoint.phone}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
+                        Points relais compatibles avec le type de colis "{expeditionData.packageType || 'standard'}"
                       </p>
-                    )}
-                  </div>
+                      
+                      {filteredRelayPoints.length === 0 && !isLoadingRelayPoints && (
+                        <p className="text-sm text-blue-600 dark:text-blue-400 mt-2">
+                          Aucun point relais compatible avec ce type de colis.
+                        </p>
+                      )}
+                    </div>
+                  )}
 
-                  {/* Recherche d'adresse de livraison */}
-                  <div className="space-y-2">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                      📍 Adresse de livraison *
-                      <span className="text-xs text-gray-500 ml-1">(avec recherche GPS)</span>
-                    </label>
-                    <LocationSearch
-                      value={expeditionData.to_address}
-                      onChange={(address) => updateExpeditionData('to_address', address)}
-                      onLocationSelect={handleDeliveryLocationSelect}
-                      placeholder="Rechercher l'adresse de livraison..."
-                      className="w-full"
+                  {/* Recherche d'adresse de livraison - affiché seulement en mode livraison à domicile */}
+                  {expeditionData.shippingMode === 'home_delivery' && (
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        📍 Adresse de livraison *
+                        <span className="text-xs text-gray-500 ml-1">(avec recherche GPS)</span>
+                      </label>
+                      <LocationSearch
+                        value={expeditionData.to_address}
+                        onChange={(address) => updateExpeditionData('to_address', address)}
+                        onLocationSelect={handleDeliveryLocationSelect}
+                        placeholder="Rechercher l'adresse de livraison..."
+                        className="w-full"
+                      />
+                      
+                      {/* Toggle Ma position pour livraison */}
+                      <div className="hidden flex items-center justify-between mt-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center space-x-3">
+                          <LocateFixed className="w-5 h-5 text-ksl-red" />
+                          <div>
+                            <label htmlFor="useMyLocationDelivery" className="text-sm font-medium text-gray-900 dark:text-white">
+                              Utiliser ma position GPS
+                            </label>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              Récupérer automatiquement mes coordonnées
+                            </p>
+                          </div>
+                        </div>
+                        
+                        {/* Toggle Switch */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newValue = !useMyLocationDelivery;
+                            setUseMyLocationDelivery(newValue);
+                            if (newValue) {
+                              getCurrentLocation('to');
+                            }
+                          }}
+                          className={`
+                            relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-ksl-red focus:ring-offset-2
+                            ${useMyLocationDelivery 
+                              ? 'bg-ksl-red' 
+                              : 'bg-gray-200 dark:bg-gray-700'
+                            }
+                          `}
+                        >
+                          <span
+                            className={`
+                              inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ease-in-out
+                              ${useMyLocationDelivery ? 'translate-x-6' : 'translate-x-1'}
+                            `}
+                          />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Information pour mode point relais */}
+                  {expeditionData.shippingMode === 'relay_point' && (
+                    <div className="mb-4 sm:mb-6 p-3 sm:p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
+                      <div className="flex items-start space-x-3">
+                        <div className="flex-shrink-0">
+                          <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                            <span className="text-white text-sm font-bold">🏪</span>
+                          </div>
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                            Mode Point Relais
+                          </h4>
+                          <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                            L'adresse de livraison sera automatiquement celle du point relais sélectionné ci-dessous.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+
+
+                  {/* Coordonnées GPS Destinataire - CACHÉES MAIS RÉCUPÉRÉES EN ARRIÈRE-PLAN */}
+                  <div className="hidden">
+                    <Input
+                      label="Latitude *"
+                      type="number"
+                      step="any"
+                      value={expeditionData.to_latitude}
+                      onChange={(e) => updateExpeditionData('to_latitude', e.target.value)}
+                      placeholder="5.347500"
+                    />
+                    <Input
+                      label="Longitude *"
+                      type="number"
+                      step="any"
+                      value={expeditionData.to_longitude}
+                      onChange={(e) => updateExpeditionData('to_longitude', e.target.value)}
+                      placeholder="-4.015400"
                     />
                   </div>
-
-
-
-                  {/* Coordonnées GPS Destinataire */}
-                  <Card className="p-3 sm:p-4 bg-green-50 dark:bg-green-900/20 shadow-md hover:shadow-lg transition-all duration-300">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 space-y-2 sm:space-y-0">
-                      <h3 className="font-medium text-gray-900 dark:text-white flex items-center">
-                        <Target className="w-4 h-4 mr-2 text-ksl-red" />
-                        <span className="text-sm sm:text-base">Coordonnées GPS de livraison *</span>
-                      </h3>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => getCurrentLocation('to')}
-                      >
-                        <LocateFixed className="w-4 h-4 mr-1" />
-                        <span className="text-xs sm:text-sm">Ma position</span>
-                      </Button>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                      <Input
-                        label="Latitude *"
-                        type="number"
-                        step="any"
-                        value={expeditionData.to_latitude}
-                        onChange={(e) => updateExpeditionData('to_latitude', e.target.value)}
-                        placeholder="5.347500"
-                      />
-                      <Input
-                        label="Longitude *"
-                        type="number"
-                        step="any"
-                        value={expeditionData.to_longitude}
-                        onChange={(e) => updateExpeditionData('to_longitude', e.target.value)}
-                        placeholder="-4.015400"
-                      />
-                    </div>
-                    
-                    {expeditionData.to_latitude && expeditionData.to_longitude && (
-                      <Alert variant="success" className="mt-3">
-                        <CheckCircle className="w-4 h-4" />
-                        Position confirmée: {expeditionData.to_latitude}, {expeditionData.to_longitude}
-                      </Alert>
-                    )}
-                  </Card>
 
                   {/* Informations destinataire */}
                   <div className="space-y-4">
@@ -935,17 +1569,16 @@ const Expedier = () => {
                     
                     {/* Numéro de commande */}
                     <Input
-                      label="Numéro de commande (5 chiffres)"
+                      label="Numéro de commande"
                       value={expeditionData.order_number || ''}
                       onChange={(e) => {
-                        // Limiter à 5 chiffres numériques
-                        const val = e.target.value.replace(/\D/g, '').slice(0, 5);
+                        // Permettre jusqu'à 30 caractères alphanumériques
+                        const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 30);
                         updateExpeditionData('order_number', val);
                       }}
                       leftIcon={FileText}
-                      placeholder="Saisir 5 chiffres"
-                      maxLength={5}
-                      inputMode="numeric"
+                      placeholder="Ex: CMD2024ABC123"
+                      maxLength={30}
                     />
                     
                     {/* Notes de livraison */}
@@ -1026,14 +1659,34 @@ const Expedier = () => {
                       </select>
                     </div>
                     
-                    <Input
-                      label="Poids (kg) *"
-                      type="number"
-                      step="0.1"
-                      value={currentItem.weight}
-                      onChange={(e) => setCurrentItem(prev => ({...prev, weight: e.target.value}))}
-                      placeholder="0.0"
-                    />
+                    {/* Sélecteur de format de colis */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Format de colis
+                      </label>
+                      <select
+                        value={selectedPackageFormat}
+                        onChange={(e) => handlePackageFormatChange(e.target.value)}
+                        className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 bg-white dark:bg-dark-bg-secondary focus:outline-none focus:ring-2 focus:ring-ksl-red focus:border-transparent"
+                      >
+                        <option value="">Sélectionnez un format</option>
+                        {packageFormats.map((format) => (
+                          <option key={format.id} value={format.id}>
+                            {format.name} - {format.description}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedPackageFormat && selectedPackageFormat !== 'xl' && (
+                        <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-xs">
+                          <p className="text-blue-700 dark:text-blue-300">
+                            <strong>Format :</strong> {packageFormats.find(f => f.id === selectedPackageFormat)?.name}
+                          </p>
+                          <p className="text-blue-600 dark:text-blue-400">
+                            {packageFormats.find(f => f.id === selectedPackageFormat)?.dimensions.length} × {packageFormats.find(f => f.id === selectedPackageFormat)?.dimensions.width} × {packageFormats.find(f => f.id === selectedPackageFormat)?.dimensions.height} cm, {packageFormats.find(f => f.id === selectedPackageFormat)?.weight} kg
+                          </p>
+                        </div>
+                      )}
+                    </div>
                     
                     <Input
                       label="Quantité"
@@ -1044,31 +1697,40 @@ const Expedier = () => {
                     />
                   </div>
 
-                  <div className="grid grid-cols-3 gap-4 mb-4">
-                    <Input
-                      label="Longueur (cm)"
-                      type="number"
-                      value={currentItem.length}
-                      onChange={(e) => setCurrentItem(prev => ({...prev, length: e.target.value}))}
-                      placeholder="0"
-                    />
-                    
-                    <Input
-                      label="Largeur (cm)"
-                      type="number"
-                      value={currentItem.width}
-                      onChange={(e) => setCurrentItem(prev => ({...prev, width: e.target.value}))}
-                      placeholder="0"
-                    />
-                    
-                    <Input
-                      label="Hauteur (cm)"
-                      type="number"
-                      value={currentItem.height}
-                      onChange={(e) => setCurrentItem(prev => ({...prev, height: e.target.value}))}
-                      placeholder="0"
-                    />
-                  </div>
+                  {/* Champs de poids et dimensions - affichés seulement pour XL ou si showCustomDimensions est true */}
+                  {(showCustomDimensions || selectedPackageFormat === 'xl') && (
+                    <div className="grid grid-cols-3 gap-4 mb-4">
+                      <Input
+                        label="Poids (kg)"
+                        type="number"
+                        step="0.1"
+                        value={currentItem.weight}
+                        onChange={(e) => setCurrentItem(prev => ({...prev, weight: e.target.value}))}
+                        placeholder="0.0"
+                      />
+                      <Input
+                        label="Longueur (cm)"
+                        type="number"
+                        value={currentItem.length}
+                        onChange={(e) => setCurrentItem(prev => ({...prev, length: e.target.value}))}
+                        placeholder="0"
+                      />
+                      <Input
+                        label="Largeur (cm)"
+                        type="number"
+                        value={currentItem.width}
+                        onChange={(e) => setCurrentItem(prev => ({...prev, width: e.target.value}))}
+                        placeholder="0"
+                      />
+                      <Input
+                        label="Hauteur (cm)"
+                        type="number"
+                        value={currentItem.height}
+                        onChange={(e) => setCurrentItem(prev => ({...prev, height: e.target.value}))}
+                        placeholder="0"
+                      />
+                    </div>
+                  )}
 
                   <Button onClick={addItem} className="w-full">
                     <Plus className="w-4 h-4 mr-2" />
@@ -1177,12 +1839,13 @@ const Expedier = () => {
                         <div className="flex items-center space-x-2">
                           <span className="text-sm text-blue-700 dark:text-blue-300">
                             {(() => {
+                              
                               const types = [
-                                { value: 'standard', emoji: '📦', label: 'Standard' },
-                                { value: 'fragile', emoji: '🔍', label: 'Fragile' },
-                                { value: 'cold', emoji: '❄️', label: 'Froid' },
-                                { value: 'secured', emoji: '🔒', label: 'Sécurisé' },
-                                { value: 'large_volume', emoji: '📏', label: 'Gros volume' }
+                                { value: 'standard', label: 'Standard', variant: 'default', emoji: '📦' },
+                                { value: 'fragile', label: 'Fragile', variant: 'warning', emoji: '🔍' },
+                                { value: 'cold', label: 'Froid', variant: 'info', emoji: '❄️' },
+                                { value: 'secure', label: 'Sécurisé', variant: 'error', emoji: '🔒' },
+                                { value: 'large', label: 'Gros volume', variant: 'success', emoji: '📏' }
                               ];
                               const selectedType = types.find(t => t.value === expeditionData.packageType);
                               return selectedType ? selectedType.emoji : '📦';
@@ -1223,7 +1886,7 @@ const Expedier = () => {
                         <div className="text-right">
                           {expeditionData.selectedCarrier ? (
                             <div className="text-sm text-blue-800 dark:text-blue-200">
-                              {carriers.find(c => c.id.toString() === expeditionData.selectedCarrier)?.nom || 'Transporteur sélectionné'}
+                              {carriers.find(c => c.id && c.id.toString() === expeditionData.selectedCarrier)?.nom || 'Transporteur sélectionné'}
                             </div>
                           ) : (
                             <span className="text-sm text-orange-600 dark:text-orange-400">À sélectionner</span>
@@ -1260,11 +1923,11 @@ const Expedier = () => {
                   </label>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                     {[
-                      { key: 'express', name: 'Express', icon: '⚡', description: 'Rapide', factor: 1.5, delais: '2h à 4h', color: 'orange' },
-                      { key: 'standard', name: 'Standard', icon: '📦', description: 'Normal', factor: 1.0, delais: '24h à 48h', color: 'blue' },
-                      { key: 'economique', name: 'Économique', icon: '💰', description: 'Éco', factor: 0.8, delais: '48h à 78h', color: 'green' },
-                      { key: 'regional', name: 'Régional', icon: '🌍', description: 'Régional', factor: 0.9, delais: '86H - 2-4 JOURS', color: 'purple' },
-                      { key: 'simplicite', name: 'Simplicité', icon: '🎯', description: 'Simple', factor: 1.2, delais: '24H - 0-1 JOUR', color: 'red' }
+                      { key: 'flash', name: 'Flash', icon: '⚡', description: 'Rapide', delais: '2h à 4h', color: 'orange' },
+                      { key: 'express', name: 'Express', icon: '🎯', description: 'Simple', delais: '24H - 0-1 JOUR', color: 'red' },
+                      { key: 'standard', name: 'Standard', icon: '📦', description: 'Normal', delais: '24h à 48h', color: 'blue' },
+                      { key: 'economique', name: 'Économique', icon: '💰', description: 'Éco', delais: '48h à 78h', color: 'green' },
+                      { key: 'interurbaine', name: 'Interurbaine', icon: '🌍', description: 'Interurbaine', delais: '86H - 2-4 JOURS', color: 'purple' },
                     ].map((service) => (
                       <button
                         key={service.key}
@@ -1285,13 +1948,13 @@ const Expedier = () => {
                           <span className="text-2xl">{service.icon}</span>
                           <span className={cn(
                             'text-xs px-2 py-1 rounded-full',
-                            service.key === 'express' && 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400',
+                            service.key === 'flash' && 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400',
                             service.key === 'economique' && 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400',
                             service.key === 'standard' && 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400',
-                            service.key === 'regional' && 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400',
-                            service.key === 'simplicite' && 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
+                            service.key === 'interurbaine' && 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400',
+                            service.key === 'express' && 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
                           )}>
-                            {service.description}
+                            {/* {service.description} */}
                           </span>
                         </div>
                         
@@ -1301,19 +1964,15 @@ const Expedier = () => {
                           </h4>
                           
                           <div className="text-sm text-gray-600 dark:text-gray-400">
-                            {service.key === 'express' && 'Livraison rapide, priorité maximale'}
+                            {service.key === 'flash' && 'Livraison ultra-rapide, priorité maximale'}
                             {service.key === 'standard' && 'Livraison normale, bon rapport qualité/prix'}
                             {service.key === 'economique' && 'Livraison économique, délai plus long'}
-                            {service.key === 'regional' && 'Livraison régionale, couverture étendue'}
-                            {service.key === 'simplicite' && 'Livraison simple, service basique'}
+                            {service.key === 'interurbaine' && 'Livraison Interurbainee, couverture étendue'}
+                            {service.key === 'express' && 'Livraison express, service rapide'}
                           </div>
                           
                           <div className="text-xs text-gray-500 dark:text-gray-500 mt-2">
                             Délai: {service.delais}
-                          </div>
-                          
-                          <div className="text-xs text-gray-500 dark:text-gray-500">
-                            Facteur de prix: ×{service.factor}
                           </div>
                         </div>
                         
@@ -1329,11 +1988,11 @@ const Expedier = () => {
                   
                   {/* Information supplémentaire sur le service sélectionné */}
                   {expeditionData.type_service && (
-                    <Alert variant={expeditionData.type_service === 'regional' ? 'warning' : 'info'} className="mt-3">
+                    <Alert variant={expeditionData.type_service === 'interurbaine' ? 'warning' : 'info'} className="mt-3">
                       <Info className="w-4 h-4" />
                       <p className="text-sm">
-                        <strong>Service {expeditionData.type_service === 'express' ? 'Express' : expeditionData.type_service === 'standard' ? 'Standard' : expeditionData.type_service === 'economique' ? 'Économique' : expeditionData.type_service === 'regional' ? 'Régional' : 'Simplicité'} sélectionné</strong>
-                        {expeditionData.type_service === 'regional' && (
+                        <strong>Service {expeditionData.type_service === 'flash' ? 'Flash' : expeditionData.type_service === 'express' ? 'Express' : expeditionData.type_service === 'standard' ? 'Standard' : expeditionData.type_service === 'economique' ? 'Économique' : expeditionData.type_service === 'interurbaine' ? 'Interurbaine' : 'Flash'} sélectionné</strong>
+                        {expeditionData.type_service === 'interurbaine' && (
                           <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400">
                             🌍 Automatique
                           </span>
@@ -1341,11 +2000,11 @@ const Expedier = () => {
                         <br />
                         Délai de livraison estimé: <strong>{expeditionData.delais_livraison}</strong>
                         <br />
-                        {expeditionData.type_service === 'express' && 'Votre colis sera traité en priorité avec un délai de livraison réduit (+50% du tarif de base).'}
-                        {expeditionData.type_service === 'standard' && 'Service standard avec un bon équilibre entre prix et délai de livraison (tarif de base).'}
-                        {expeditionData.type_service === 'economique' && 'Option économique avec un délai de livraison plus long mais un tarif réduit (-20% du tarif de base).'}
-                        {expeditionData.type_service === 'regional' && 'Service régional avec couverture étendue et délai de 2-4 jours (-10% du tarif de base). Automatiquement sélectionné car l\'expédition se fait entre des zones différentes.'}
-                        {expeditionData.type_service === 'simplicite' && 'Service simple avec livraison basique en 0-1 jour (+20% du tarif de base).'}
+                        {expeditionData.type_service === 'flash' && 'Votre colis sera traité en priorité avec un délai de livraison ultra-rapide.'}
+                        {expeditionData.type_service === 'standard' && 'Service standard avec un bon équilibre entre prix et délai de livraison.'}
+                        {expeditionData.type_service === 'economique' && 'Option économique avec un délai de livraison plus long.'}
+                        {expeditionData.type_service === 'interurbaine' && 'Service Interurbaine avec couverture étendue et délai de 2-4 jours. Automatiquement sélectionné car l\'expédition se fait entre des zones différentes.'}
+                        {expeditionData.type_service === 'express' && 'Service express avec livraison rapide en 0-1 jour.'}
                       </p>
                     </Alert>
                   )}
@@ -1479,6 +2138,180 @@ const Expedier = () => {
                 </div>
               </div>
             )}
+
+            {/* Étape 4: Paiement (placée en face du récapitulatif, dans la colonne principale) */}
+            {currentStep === 4 && (
+              <div className="space-y-6 mt-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <CreditCard className="w-6 h-6 text-ksl-red" />
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                      💳 Choisir le mode de paiement
+                    </h2>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Button onClick={loadPaymentMethods} variant="outline" size="sm" disabled={isLoadingPaymentMethods}>
+                      <RefreshCw className={cn('w-4 h-4', isLoadingPaymentMethods && 'animate-spin')} />
+                      Actualiser
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Sélection du mode de paiement */}
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-gray-900 dark:text-white">Sélectionnez votre mode de paiement</h4>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Les méthodes disponibles sont chargées dynamiquement selon votre pays détecté automatiquement via IP</p>
+                  </div>
+
+                  {isLoadingPaymentMethods ? (
+                    <div className="flex items-center justify-center p-8">
+                      <Loader className="w-6 h-6 animate-spin text-ksl-red" />
+                      <span className="ml-2">Chargement des modes de paiement...</span>
+                    </div>
+                  ) : paymentMethodsError ? (
+                    <Alert variant="error">
+                      <AlertCircle className="w-4 h-4" />
+                      {paymentMethodsError}
+                    </Alert>
+                  ) : paymentMethods.length === 0 ? (
+                    <Alert variant="warning">
+                      <AlertCircle className="w-4 h-4" />
+                      Aucun mode de paiement disponible
+                    </Alert>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {paymentMethods.map((method) => (
+                        <div
+                          key={method.id}
+                          className={cn(
+                            'p-4 border-2 rounded-lg cursor-pointer transition-all',
+                            selectedPaymentMethod?.id === method.id
+                              ? 'border-ksl-red bg-red-50 dark:bg-red-900/20'
+                              : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                          )}
+                          onClick={() => setSelectedPaymentMethod(method)}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <div className={cn(
+                              'w-4 h-4 rounded-full border-2',
+                              selectedPaymentMethod?.id === method.id ? 'border-ksl-red bg-ksl-red' : 'border-gray-300 dark:border-gray-600'
+                            )} />
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-2">
+                                <img src={method.icone} alt={method.nom} className="w-8 h-8 object-contain" onError={(e) => { e.target.src = '/OM.png'; }} />
+                                <span className="font-medium text-gray-900 dark:text-white">{method.nom}</span>
+                                {method.clapayData?.merchant && (
+                                  <Badge variant="secondary" className="text-xs">{method.clapayData.merchant}</Badge>
+                                )}
+                              </div>
+                              {method.description && (
+                                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{method.description}</p>
+                              )}
+                              {method.clapayData && (
+                                <div className="mt-2">
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-gray-500 dark:text-gray-400">Devise:</span>
+                                    <span className="font-medium text-gray-900 dark:text-white">{method.clapayData.currency}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 📱 Champ numéro de paiement */}
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">📱 Numéro de téléphone pour le paiement</label>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">Saisissez le numéro de téléphone associé à votre compte de paiement mobile</p>
+                  </div>
+                  <div className="flex space-x-3">
+                    <div className="w-24">
+                      <select
+                        value={paymentCountryCode}
+                        onChange={(e) => setPaymentCountryCode(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-white focus:ring-2 focus:ring-ksl-red focus:border-transparent"
+                      >
+                        <option value="+225">🇨🇮 +225</option>
+                        <option value="+237">🇨🇲 +237</option>
+                        <option value="+226">🇧🇫 +226</option>
+                        <option value="+224">🇬🇳 +224</option>
+                        <option value="+241">🇬🇦 +241</option>
+                        <option value="+223">🇲🇱 +223</option>
+                        <option value="+221">🇸🇳 +221</option>
+                        <option value="+229">🇧🇯 +229</option>
+                      </select>
+                    </div>
+                    <div className="flex-1">
+                      <Input
+                        type="tel"
+                        placeholder="Numéro de téléphone"
+                        value={paymentPhoneNumber}
+                        onChange={(e) => setPaymentPhoneNumber(e.target.value)}
+                        className="w-full"
+                        required
+                      />
+                    </div>
+                  </div>
+                  {paymentPhoneNumber && (
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      Numéro complet : <span className="font-medium text-ksl-red">{paymentCountryCode}{paymentPhoneNumber}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 🚀 Indicateur de statut du paiement */}
+                {paymentStep !== 'idle' && (
+                  <div className="mt-4 p-4 rounded-lg border">
+                    {paymentStep === 'initializing' && (
+                      <div className="flex items-center space-x-3 text-blue-600 dark:text-blue-400">
+                        <Loader className="w-5 h-5 animate-spin" />
+                        <span className="font-medium">Initialisation du paiement en cours...</span>
+                      </div>
+                    )}
+                    {paymentStep === 'success' && (
+                      <div className="flex items-center space-x-3 text-green-600 dark:text-green-400">
+                        <CheckCircle className="w-5 h-5" />
+                        <span className="font-medium">Paiement initialisé avec succès !</span>
+                      </div>
+                    )}
+                    {paymentStep === 'error' && (
+                      <div className="flex items-center space-x-3 text-red-600 dark:text-red-400">
+                        <AlertCircle className="w-5 h-5" />
+                        <span className="font-medium">Erreur lors de l'initialisation du paiement</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Navigation paiement */}
+                <div className="flex flex-col sm:flex-row justify-between gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={handlePrevStep}
+                    className="w-full sm:w-auto"
+                  >
+                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    Précédent
+                  </Button>
+                  <Button
+                    onClick={handlePaymentValidation}
+                    className="w-full sm:w-auto"
+                    size="lg"
+                    disabled={!selectedPaymentMethod || !paymentPhoneNumber || isProcessingPayment}
+                    isLoading={isProcessingPayment}
+                  >
+                    <CreditCard className="w-5 h-5 mr-2" />
+                    {isProcessingPayment ? 'Initialisation du paiement...' : 'Initialiser le paiement'}
+                  </Button>
+                </div>
+              </div>
+            )}
           </Card>
         </div>
 
@@ -1517,62 +2350,137 @@ const Expedier = () => {
         </div>
       </div>
 
-      {/* Modal de devis */}
+      {/* Modal de devis amélioré */}
       {showQuoteModal && quoteData && (
         <Modal
           isOpen={showQuoteModal}
           onClose={() => setShowQuoteModal(false)}
-          title="Devis calculé"
+          title=""
         >
-          <div className="space-y-4">
-            <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
-              <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Détails du calcul</h4>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span>Prix de base:</span>
-                  <span>{quoteData.breakdown.basePrice} FCFA</span>
+          <div className="space-y-6">
+            {/* Header avec icône et titre */}
+            <div className="text-center">
+              <div className="w-16 h-16 bg-green-100 dark:bg-green-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Calculator className="w-8 h-8 text-green-600 dark:text-green-400" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                Devis calculé avec succès !
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Votre estimation est prête
+              </p>
+            </div>
+
+            {/* Prix principal avec animation */}
+            <div className="text-center bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/10 dark:to-blue-900/10 rounded-xl p-6 border border-green-200 dark:border-green-800">
+              <div className="animate-bounce mb-2">
+                <span className="text-4xl font-bold text-green-600 dark:text-green-400">
+                  {formatPrice(quoteData.finalPrice)}
+                </span>
+              </div>
+              <p className="text-sm text-gray-600 dark:text-gray-400 font-medium">
+                Prix final estimé
+              </p>
+            </div>
+
+            {/* Détails du calcul */}
+            <div className="hidden bg-gray-50 dark:bg-gray-800 rounded-xl p-4">
+              <h4 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                <Calculator className="w-4 h-4 mr-2 text-blue-600" />
+                Détails du calcul
+              </h4>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center py-2 border-b border-gray-200 dark:border-gray-700">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Prix de base</span>
+                  <span className="font-medium text-gray-900 dark:text-white">
+                    {formatPrice(quoteData.breakdown?.basePrice || 0)}
+                  </span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Tarif poids:</span>
-                  <span>{quoteData.breakdown.weightTariff} FCFA</span>
+                <div className="flex justify-between items-center py-2 border-b border-gray-200 dark:border-gray-700">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Tarif poids</span>
+                  <span className="font-medium text-gray-900 dark:text-white">
+                    {formatPrice(quoteData.breakdown?.weightTariff || 0)}
+                  </span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Tarif volume:</span>
-                  <span>{quoteData.breakdown.volumeTariff} FCFA</span>
+                <div className="flex justify-between items-center py-2 border-b border-gray-200 dark:border-gray-700">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Tarif volume</span>
+                  <span className="font-medium text-gray-900 dark:text-white">
+                    {formatPrice(quoteData.breakdown?.volumeTariff || 0)}
+                  </span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Tarif distance:</span>
-                  <span>{quoteData.breakdown.distanceTariff} FCFA</span>
+                <div className="flex justify-between items-center py-2">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Tarif distance</span>
+                  <span className="font-medium text-gray-900 dark:text-white">
+                    {formatPrice(quoteData.breakdown?.distanceTariff || 0)}
+                  </span>
                 </div>
               </div>
             </div>
-            
-            <div className="text-center">
-              <p className="text-2xl font-bold text-ksl-red">
-                {formatPrice(quoteData.finalPrice)}
-              </p>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Prix final estimé</p>
+
+            {/* Informations supplémentaires */}
+            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
+              <div className="flex items-start space-x-3">
+                <Info className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                <div className="text-sm text-blue-800 dark:text-blue-200">
+                  <p className="font-medium mb-1">ℹ️ Informations importantes :</p>
+                  <ul className="space-y-1 text-xs">
+                    <li>• Ce prix est une estimation basée sur les informations fournies</li>
+                    <li>• Le prix final peut varier selon les conditions de livraison</li>
+                    {expeditionData.isInsured ? (
+                      <li>• Les frais d'assurance sont inclus dans cette estimation</li>
+                    ) : (
+                      <li>• Les frais d'assurance ne sont pas inclus dans cette estimation</li>
+                    )}
+                  </ul>
+                </div>
+              </div>
             </div>
-            
-            <div className="flex justify-end space-x-3">
+
+            {/* Boutons d'action */}
+            <div className="flex flex-col sm:flex-row gap-3 pt-4">
               <Button
                 variant="outline"
                 onClick={() => setShowQuoteModal(false)}
+                className="flex-1 sm:flex-none"
               >
-                Fermer
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Modifier
               </Button>
               <Button
                 onClick={() => {
                   setShowQuoteModal(false);
                   handleNextStep();
                 }}
+                className="flex-1 sm:flex-none bg-green-600 hover:bg-green-700"
               >
+                <ArrowRight className="w-4 h-4 mr-2" />
                 Continuer
               </Button>
             </div>
           </div>
         </Modal>
       )}
+
+      {/* Modal de redirection/état de paiement */}
+      <PaymentRedirect
+        isOpen={showPaymentRedirect}
+        onClose={() => setShowPaymentRedirect(false)}
+        paymentStatus={paymentFinalStatus || (paymentStep === 'success' ? 'success' : paymentStep === 'initializing' ? 'pending' : 'failed')}
+        expeditionData={paymentCreatedExpedition}
+        onNewExpedition={() => {
+          setShowPaymentRedirect(false);
+          setCurrentStep(1);
+        }}
+        onViewExpeditions={() => {
+          setShowPaymentRedirect(false);
+          window.location.href = '/';
+        }}
+        onGoToDashboard={() => {
+          setShowPaymentRedirect(false);
+          window.location.href = '/';
+        }}
+      />
+
       </div>
     </div>
   );
