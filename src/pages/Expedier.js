@@ -29,7 +29,8 @@ import {
   Database,
   Shield,
   Globe,
-  RefreshCw
+  RefreshCw,
+  ExternalLink
 } from 'lucide-react';
 import { Button, Card, Input, Badge, Alert, Modal, LocationSearch, ProgressBar, Tabs } from '../components/ui';
 import { cn } from '../utils/cn';
@@ -146,6 +147,10 @@ const Expedier = () => {
   const paymentCheckIntervalRef = React.useRef(null);
   const [paymentPhoneNumber, setPaymentPhoneNumber] = useState('');
   const [paymentCountryCode, setPaymentCountryCode] = useState('+225');
+  // Champs invités (utilisateur non authentifié)
+  const [guestFirstName, setGuestFirstName] = useState('');
+  const [guestLastName, setGuestLastName] = useState('');
+  const [guestEmail, setGuestEmail] = useState('');
   const [showPaymentRedirect, setShowPaymentRedirect] = useState(false);
   const [paymentFinalStatus, setPaymentFinalStatus] = useState(null); // 'success' | 'pending' | 'failed'
   const [paymentCreatedExpedition, setPaymentCreatedExpedition] = useState(null);
@@ -153,6 +158,9 @@ const Expedier = () => {
   const [useMyLocation, setUseMyLocation] = useState(false);
   const [useMyLocationDelivery, setUseMyLocationDelivery] = useState(false);
   const [selectedRelayPoint, setSelectedRelayPoint] = useState(null);
+  
+  // Authentification simple
+  const isAuthenticated = !!user;
   
   // États pour les formats de colis
   const [selectedPackageFormat, setSelectedPackageFormat] = useState('');
@@ -825,6 +833,32 @@ const Expedier = () => {
     return 'autre';
   };
 
+  // Mapper: indicatif téléphonique -> code pays ISO (CI, CM, BF, ...)
+  const mapDialCodeToIso = (dialCode) => {
+    switch (dialCode) {
+      case '+225': return 'CI';
+      case '+237': return 'CM';
+      case '+226': return 'BF';
+      case '+224': return 'GN';
+      case '+241': return 'GA';
+      case '+223': return 'ML';
+      case '+221': return 'SN';
+      case '+229': return 'BJ';
+      default: return 'CI';
+    }
+  };
+
+  // Mapper: nom opérateur -> code opérateur (OM, MOOV, MTN, WAVE)
+  const mapOperatorToCode = (name) => {
+    if (!name) return 'OM';
+    const n = name.toString().toLowerCase();
+    if (n.includes('wave')) return 'WAVE';
+    if (n.includes('moov')) return 'MOOV';
+    if (n.includes('mtn')) return 'MTN';
+    if (n.includes('orange') || n.includes('om')) return 'OM';
+    return 'OM';
+  };
+
   const loadPaymentMethods = async () => {
     setIsLoadingPaymentMethods(true);
     try {
@@ -844,6 +878,7 @@ const Expedier = () => {
         const transformed = clapayData.map((method, index) => ({
           id: method.id || index + 1,
           nom: method.operator || method.description || 'Méthode de paiement',
+          operatorCode: (method.operators_code || method.operator || method.code || '').toString().toUpperCase(),
           icone: getPaymentIcon(method.operator),
           description: method.description || `${method.operator} - ${method.currency}`,
           montant_min: 0,
@@ -933,30 +968,43 @@ const Expedier = () => {
     try {
       setPaymentStep('initializing');
       const phoneDigits = (paymentPhoneNumber || '').replace(/\D/g, '');
+      const derivedOperatorCode = selectedPaymentMethod?.operatorCode || mapOperatorToCode(selectedPaymentMethod?.nom);
       const paymentData = {
         amount: Math.max(parseFloat(quoteData?.finalPrice || 0), 1),
-        country_code: paymentCountryCode.replace('+','') || '225',
-        operator_code: (selectedPaymentMethod?.nom || '').toUpperCase(),
+        country_code: mapDialCodeToIso(paymentCountryCode),
+        operators_code: derivedOperatorCode,
         phone_number: phoneDigits,
         description: 'Paiement expédition',
       };
+      // Ajouter info utilisateur si non authentifié
+      if (!isAuthenticated) {
+        paymentData.email = guestEmail;
+        paymentData.last_name = guestLastName;
+        paymentData.first_name = guestFirstName;
+      }
+      // Logs de debug
+      console.log('[Paiement] selectedPaymentMethod:', selectedPaymentMethod);
+      console.log('[Paiement] derivedOperatorCode:', derivedOperatorCode);
+      console.log('[Paiement] paymentData payload:', paymentData);
       if (!paymentData.amount) throw new Error('Montant invalide');
       if (!paymentData.country_code) throw new Error('Code pays manquant');
-      if (!paymentData.operator_code) throw new Error('Opérateur manquant');
+      if (!paymentData.operators_code) throw new Error('Opérateur manquant');
       if (!paymentData.phone_number) throw new Error('Téléphone manquant');
 
       const response = await modepaiementAPI.initpaiement(paymentData);
-      setPaymentStep('success');
       setExpeditionData(prev => ({ ...prev, mode_paiement: selectedPaymentMethod?.nom }));
       const paymentUrl = response?.data?.payment_url;
       const signature = response?.data?.signature;
       if (!paymentUrl) throw new Error("Lien de paiement manquant");
+      try { window.localStorage.setItem('ksl_last_payment_url', paymentUrl); } catch {}
       if (typeof window !== 'undefined') window.open(paymentUrl, '_blank');
       if (signature) {
         if (paymentCheckIntervalRef.current) clearInterval(paymentCheckIntervalRef.current);
         paymentCheckIntervalRef.current = setInterval(() => {
           checkPaymentStatus(signature);
         }, 5000);
+        // On passe en attente après initialisation
+        setPaymentStep('pending');
       }
     } catch (err) {
       setPaymentStep('error');
@@ -2142,24 +2190,57 @@ const Expedier = () => {
             {/* Étape 4: Paiement (placée en face du récapitulatif, dans la colonne principale) */}
             {currentStep === 4 && (
               <div className="space-y-6 mt-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <CreditCard className="w-6 h-6 text-ksl-red" />
-                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                      💳 Choisir le mode de paiement
-                    </h2>
+                {(paymentStep === 'idle' || paymentStep === 'error') && (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <CreditCard className="w-6 h-6 text-ksl-red" />
+                      <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                        Choisir le mode de paiement
+                      </h2>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Button onClick={loadPaymentMethods} variant="outline" size="sm" disabled={isLoadingPaymentMethods}>
+                        <RefreshCw className={cn('w-4 h-4', isLoadingPaymentMethods && 'animate-spin')} />
+                        Actualiser
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Button onClick={loadPaymentMethods} variant="outline" size="sm" disabled={isLoadingPaymentMethods}>
-                      <RefreshCw className={cn('w-4 h-4', isLoadingPaymentMethods && 'animate-spin')} />
-                      Actualiser
-                    </Button>
+                )}
+
+                {/* Résumé du paiement */}
+                <div className="p-4 rounded-lg border bg-gray-50 dark:bg-dark-bg-secondary/40">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Montant à payer</p>
+                      <p className="text-lg font-semibold text-gray-900 dark:text-white">
+                        {formatPrice(Math.max(parseFloat(quoteData?.finalPrice || 0), 1))}
+                      </p>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      {selectedPaymentMethod ? (
+                        <>
+                          <img 
+                            src={selectedPaymentMethod.icone} 
+                            alt={selectedPaymentMethod.nom} 
+                            className="w-8 h-8 object-contain" 
+                            onError={(e) => { e.target.src = '/OM.png'; }} 
+                          />
+                          <div className="text-right">
+                            <p className="text-sm text-gray-600 dark:text-gray-400">Méthode</p>
+                            <p className="text-sm font-medium text-gray-900 dark:text-white">{selectedPaymentMethod.nom}</p>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-sm text-gray-500">Aucune méthode sélectionnée</p>
+                      )}
+                    </div>
                   </div>
                 </div>
 
                 {/* Sélection du mode de paiement */}
+                {(paymentStep === 'idle' || paymentStep === 'error') && (
                 <div className="space-y-4">
-                  <div className="space-y-2">
+                  <div className="hidden space-y-2">
                     <h4 className="font-medium text-gray-900 dark:text-white">Sélectionnez votre mode de paiement</h4>
                     <p className="text-sm text-gray-600 dark:text-gray-400">Les méthodes disponibles sont chargées dynamiquement selon votre pays détecté automatiquement via IP</p>
                   </div>
@@ -2223,8 +2304,10 @@ const Expedier = () => {
                     </div>
                   )}
                 </div>
+                )}
 
                 {/* 📱 Champ numéro de paiement */}
+                {(paymentStep === 'idle' || paymentStep === 'error') && (
                 <div className="space-y-3">
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">📱 Numéro de téléphone pour le paiement</label>
@@ -2264,6 +2347,25 @@ const Expedier = () => {
                     </div>
                   )}
                 </div>
+                )}
+
+                {/* Champs invités si non authentifié */}
+                {!isAuthenticated && (paymentStep === 'idle' || paymentStep === 'error') && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Prénom</label>
+                      <Input value={guestFirstName} onChange={(e) => setGuestFirstName(e.target.value)} placeholder="Votre prénom" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Nom</label>
+                      <Input value={guestLastName} onChange={(e) => setGuestLastName(e.target.value)} placeholder="Votre nom" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+                      <Input type="email" value={guestEmail} onChange={(e) => setGuestEmail(e.target.value)} placeholder="email@exemple.com" />
+                    </div>
+                  </div>
+                )}
 
                 {/* 🚀 Indicateur de statut du paiement */}
                 {paymentStep !== 'idle' && (
@@ -2272,6 +2374,37 @@ const Expedier = () => {
                       <div className="flex items-center space-x-3 text-blue-600 dark:text-blue-400">
                         <Loader className="w-5 h-5 animate-spin" />
                         <span className="font-medium">Initialisation du paiement en cours...</span>
+                      </div>
+                    )}
+                    {paymentStep === 'pending' && (
+                      <div className="flex items-center space-x-3 text-blue-600 dark:text-blue-400">
+                        <Loader className="w-5 h-5 animate-spin" />
+                        <span className="font-medium">Paiement en cours de traitement...</span>
+                      </div>
+                    )}
+                    {(paymentStep === 'initializing' || paymentStep === 'pending') && (
+                      <div className="mt-4 flex flex-col sm:flex-row gap-3">
+                        <Button 
+                          onClick={() => {
+                            // Rouvrir la page de paiement si disponible
+                            try {
+                              const last = window.localStorage.getItem('ksl_last_payment_url');
+                              if (last) window.open(last, '_blank');
+                            } catch {}
+                          }}
+                          variant="outline"
+                          className="w-full sm:w-auto"
+                        >
+                          <ExternalLink className="w-4 h-4 mr-2" />
+                          Rouvrir la page de paiement
+                        </Button>
+                        <Button 
+                          variant="outline"
+                          onClick={() => setPaymentStep('idle')}
+                          className="w-full sm:w-auto"
+                        >
+                          Revenir aux méthodes de paiement
+                        </Button>
                       </div>
                     )}
                     {paymentStep === 'success' && (
@@ -2294,21 +2427,31 @@ const Expedier = () => {
                   <Button
                     variant="outline"
                     onClick={handlePrevStep}
-                    className="w-full sm:w-auto"
+                    className="hidden w-full sm:w-auto"
                   >
-                    <ArrowLeft className="w-4 h-4 mr-2" />
+                    <ArrowLeft className=" w-4 h-4 mr-2" />
                     Précédent
                   </Button>
-                  <Button
-                    onClick={handlePaymentValidation}
-                    className="w-full sm:w-auto"
-                    size="lg"
-                    disabled={!selectedPaymentMethod || !paymentPhoneNumber || isProcessingPayment}
-                    isLoading={isProcessingPayment}
-                  >
-                    <CreditCard className="w-5 h-5 mr-2" />
-                    {isProcessingPayment ? 'Initialisation du paiement...' : 'Initialiser le paiement'}
-                  </Button>
+                  {paymentStep === 'idle' || paymentStep === 'error' ? (
+                    <Button
+                      onClick={handlePaymentValidation}
+                      className="w-full sm:w-auto"
+                      size="lg"
+                      disabled={!selectedPaymentMethod || !paymentPhoneNumber || isProcessingPayment}
+                      isLoading={isProcessingPayment}
+                    >
+                      <CreditCard className="w-5 h-5 mr-2" />
+                      {isProcessingPayment ? 'Initialisation du paiement...' : 'Initialiser le paiement'}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      onClick={() => setPaymentStep('idle')}
+                      className="hidden w-full sm:w-auto"
+                    >
+                      Revenir aux méthodes de paiement
+                    </Button>
+                  )}
                 </div>
               </div>
             )}

@@ -1,8 +1,7 @@
 import axios from 'axios';
 
 // Configuration de base d'Axios
-const API_BASE_URL =
-  process.env.REACT_APP_API_URL || 'https://backend.katianlogistique.com/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://backend.katianlogistique.com/api';
   // console.log('🔗 API Base URL:', API_BASE_URL);
 
 // Client API avec configuration de base
@@ -66,15 +65,6 @@ export const authAPI = {
   },
 
   // Inscription
-  // register: async (userData) => {
-  //   try {
-  //     const response = await apiClient.post('/auth/register/', userData);
-  //     return response.data;
-  //   } catch (error) {
-  //     console.error('❌ Erreur inscription:', error);
-  //     throw error;
-  //   }
-  // },
   register: (userData) => apiClient.post('/auth/register/', userData),
 
   // Déconnexion
@@ -188,6 +178,7 @@ export const carrierAPI = {
   },
  
 };
+
 
 export const modepaiementAPI = {
   initpaiement: (data) => apiClient.post('/paiement/', data),

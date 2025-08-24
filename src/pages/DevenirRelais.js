@@ -122,7 +122,7 @@ export default function DevenirRelais() {
           email: formData.email,
           phone: formData.phone,
           address: formData.address,
-          business_type: formData.business_type,
+          business_type: "autre",
           role: "relay_point",
           is_active: false,
           statut: "inactif"
@@ -565,7 +565,7 @@ export default function DevenirRelais() {
                       phone: '',
                       email: '',
                       address: '',
-                      business_type: '',
+                      business_type: 'autre',
                       business_name: '',
                       opening_hours: '',
                       ville: 'Abidjan',
@@ -686,26 +686,10 @@ export default function DevenirRelais() {
                       </div>
 
                       {/* Email */}
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                          Email <span className="text-red-500">*</span>
-                        </label>
-                        <div className="relative">
-                          <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                          <input
-                            type="email"
-                            name="email"
-                            value={formData.email}
-                            onChange={handleChange}
-                            placeholder="email@exemple.com"
-                            className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-ksl-red"
-                            required
-                          />
-                        </div>
-                      </div>
+                     
 
                       {/* Type de commerce */}
-                      <div>
+                      <div className="hidden">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                           Type de commerce <span className="text-red-500">*</span>
                         </label>
@@ -733,7 +717,23 @@ export default function DevenirRelais() {
                         </div>
                       </div>
                     </div>
-
+                    <div className="">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Email <span className="text-red-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                          <input
+                            type="email"
+                            name="email"
+                            value={formData.email}
+                            onChange={handleChange}
+                            placeholder="email@exemple.com"
+                            className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-ksl-red"
+                            required
+                          />
+                        </div>
+                      </div>
                     {/* Adresse du gérant - Pleine largeur */}
                     <div className="mt-4 sm:mt-6">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">

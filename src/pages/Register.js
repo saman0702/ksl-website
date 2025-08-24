@@ -19,8 +19,9 @@ export default function Register() {
     email: '',
     phone: '',
     role: '',
-    statut: 'inactif',
+    statut: 'inactif', // Sera mis à jour selon le rôle
     business_type: '',
+    business_type_other: '',
     address: ''
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -31,10 +32,28 @@ export default function Register() {
   const navigate = useNavigate();
 
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
+    const { name, value } = e.target;
+    
+    // Si le rôle change, mettre à jour le statut automatiquement
+    if (name === 'role') {
+      let newStatut = 'inactif';
+      if (value === 'relay_point') {
+        newStatut = 'inactif';
+      } else if (value === 'entreprise' || value === 'client') {
+        newStatut = 'actif';
+      }
+      
+      setFormData({
+        ...formData,
+        [name]: value,
+        statut: newStatut
+      });
+    } else {
+      setFormData({
+        ...formData,
+        [name]: value,
+      });
+    }
   };
 
   const validateStep1 = () => {
@@ -49,6 +68,10 @@ export default function Register() {
     if (formData.role === 'relay_point' || formData.role === 'entreprise') {
       if (!formData.business_type) {
         setError('Veuillez sélectionner le type d\'entreprise.');
+        return false;
+      }
+      if (formData.business_type === 'other' && !formData.business_type_other.trim()) {
+        setError('Veuillez préciser le type d\'entreprise.');
         return false;
       }
     }
@@ -103,7 +126,7 @@ export default function Register() {
 
       console.log('✅ Inscription réussie:', response);
       
-      // Gestion de la redirection selon le rôle
+      // Gestion des messages et redirections selon le rôle
       if (formData.role === 'client') {
         setSuccess('Compte créé avec succès ! Redirection vers votre espace client...');
         
@@ -111,13 +134,20 @@ export default function Register() {
         setTimeout(() => {
           window.location.href = 'https://business.katianlogistique.com';
         }, 2000);
-      } else {
-        setSuccess('Votre demande a été prise en compte ! Notre équipe vous contactera bientôt pour finaliser votre inscription.');
+      } else if (formData.role === 'entreprise' || formData.role === 'relay_point') {
+        setSuccess('Compte créé avec succès ! Notre équipe vous contactera dans les 48h pour finaliser votre inscription.');
         
         // Rediriger vers la page d'accueil après 3 secondes
         setTimeout(() => {
           navigate('/');
         }, 3000);
+      } else {
+        setSuccess('Compte créé avec succès ! Redirection vers votre espace...');
+        
+        // Rediriger vers la page d'accueil après 2 secondes
+        setTimeout(() => {
+          navigate('/');
+        }, 2000);
       }
     } catch (error) {
       console.error('❌ Erreur d\'inscription:', error);
@@ -342,11 +372,31 @@ export default function Register() {
                             <option value="gas_station">Station essence</option>
                             <option value="cyber_cafe">Cyber café</option>
                             <option value="bookstore">Librairie</option>
-                            <option value="mtn">MTN</option>
-                            <option value="orange">Orange</option>
-                            <option value="moov">Moov</option>
+                            {/* <option value="mtn">MTN</option> */}
+                            {/* <option value="orange">Orange</option> */}
+                            {/* <option value="moov">Moov</option> */}
                             <option value="other">Autre</option>
                           </select>
+                        </div>
+                      </div>
+                    )}
+
+                    {(formData.role === 'relay_point' || formData.role === 'entreprise') && formData.business_type === 'other' && (
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                          Précisez votre type d'entreprise <span className="text-red-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <Building className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                          <input
+                            type="text"
+                            name="business_type_other"
+                            value={formData.business_type_other}
+                            onChange={handleChange}
+                            placeholder="Ex: Atelier de réparation, Coopérative, etc."
+                            className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-ksl-red"
+                            required
+                          />
                         </div>
                       </div>
                     )}
@@ -406,9 +456,15 @@ export default function Register() {
           <div className="text-center mt-6 sm:mt-8">
             <p className="text-sm sm:text-base text-gray-600 dark:text-gray-300">
               Vous avez déjà un compte ?{' '}
-              <Link to="/login" className="text-ksl-red hover:text-ksl-red-dark font-medium">
-                Se connecter
-              </Link>
+              <a 
+                  href="https://business.katianlogistique.com" 
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block w-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-dark-bg-tertiary transition-colors duration-200 text-center whitespace-nowrap"
+                  
+                >
+                  Se connecter
+                </a>
             </p>
           </div>
         </div>

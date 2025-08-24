@@ -190,7 +190,7 @@ export default function PourQui() {
         },
         {
           icon: CreditCard,
-          title: 'Cash on Delivery',
+          title: 'Paiement à la  Livraison (PAL)',
           description: 'Augmentez vos ventes avec le paiement à la livraison sécurisé'
         },
         {
@@ -492,7 +492,7 @@ export default function PourQui() {
       <section className="bg-gradient-to-br from-gray-900 to-ksl-black text-white py-20">
         <div className="container-ksl text-center">
           <h2 className="text-3xl md:text-4xl font-bold mb-6">
-            Prêt à rejoindre Katian ?
+            Prêt à rejoindre katian logistique ?
           </h2>
           <p className="text-xl text-gray-300 mb-8 max-w-2xl mx-auto">
             Que vous soyez particulier, entreprise ou e-commerçant, nous avons la solution qu'il vous faut

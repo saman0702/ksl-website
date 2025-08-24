@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Package,
   MapPin,
@@ -19,22 +19,30 @@ import {
   LocateFixed,
   Loader,
   FileText,
-  ArrowLeft,
-  ArrowRight,
   Edit,
   Key,
   AlertTriangle,
   Users,
   Send,
-  Database
+  Database,
+  Grid,
+  List,
+  Eye,
+  Copy,
+  Search,
+  RefreshCw,
+  X,
+  ExternalLink,
+  ArrowLeft
 } from 'lucide-react';
-import { Button, Card, Input, Badge, Alert, Modal, LocationSearch, ProgressBar, Tabs } from '../../components/ui';
+import { Button, Card, Input, Badge, Alert, Modal, LocationSearch, ProgressBar, Tabs, Switch } from '../../components/ui';
 import { cn } from '../../utils/cn';
 // import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from '../../contexts/AuthContext';
 import { useParcel } from '../../contexts/ParcelContext';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { relayAPI, carrierAPI, modepaiementAPI } from '../../services/api';
+import PaymentRedirect from '../../components/PaymentRedirect';
 import { calculateTariff, getCityZone, searchCities, CITY_ZONE_MAPPING } from '../../services/tariffService';
 import printService from '../../services/printService';
 
@@ -185,7 +193,7 @@ function adaptQuoteDataForCarrier(carrierData, data) {
       return {
         ride_type_id: data.ride_type_id || 2, // Par défaut: livraison
         vehicle_type_id: data.vehicle_type_id || 1, // Par défaut: Car
-        zone_id: data.zone_id || 3, // Selon l'exemple (pas 10)
+        zone_id: data.zone_id || 10, // Selon l'exemple (pas 10)
         from_latitude: parseFloat(data.from_latitude),
         from_longitude: parseFloat(data.from_longitude),
         from_address: data.from_address,
@@ -322,6 +330,57 @@ const ClientSendParcel = () => {
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [pendingExpeditionData, setPendingExpeditionData] = useState(null);
+  
+  // 🚀 NOUVEAU : État pour gérer l'étape de paiement
+  const [paymentStep, setPaymentStep] = useState('idle'); // 'idle', 'initializing', 'success', 'error'
+  const [paymentResponse, setPaymentResponse] = useState(null);
+  
+  // 🔄 NOUVEAU : États pour la vérification automatique du paiement
+  const paymentCheckIntervalRef = useRef(null);
+  const [paymentFinalStatus, setPaymentFinalStatus] = useState(null);
+  const [showPaymentRedirect, setShowPaymentRedirect] = useState(false);
+  const [createdExpedition, setCreatedExpedition] = useState(null);
+  
+  // 📱 NOUVEAU : État pour le numéro de paiement
+  const [paymentPhoneNumber, setPaymentPhoneNumber] = useState('');
+  const [paymentCountryCode, setPaymentCountryCode] = useState('+225');
+
+  // 🗺️ ÉTAT POUR LE SUIVI GPS
+  const [locationTrackingEnabled, setLocationTrackingEnabled] = useState(false);
+
+  // 🧹 NOUVEAU : Nettoyer l'intervalle de vérification du paiement
+  useEffect(() => {
+    return () => {
+      if (paymentCheckIntervalRef.current) {
+        clearInterval(paymentCheckIntervalRef.current);
+        paymentCheckIntervalRef.current = null;
+      }
+    };
+  }, []);
+
+  // 📱 NOUVEAU : Initialiser le numéro de téléphone avec celui de l'utilisateur
+  useEffect(() => {
+    if (user && !paymentPhoneNumber) {
+      const userData = getUserData();
+      if (userData?.customer_phone_number) {
+        // Extraire le code pays et le numéro
+        const phoneNumber = userData.customer_phone_number;
+        if (phoneNumber.startsWith('+')) {
+          const codeMatch = phoneNumber.match(/^\+(\d+)/);
+          if (codeMatch) {
+            const code = '+' + codeMatch[1];
+            const number = phoneNumber.replace(/^\+(\d+)/, '');
+            setPaymentCountryCode(code);
+            setPaymentPhoneNumber(number);
+          } else {
+            setPaymentPhoneNumber(phoneNumber);
+          }
+        } else {
+          setPaymentPhoneNumber(phoneNumber);
+        }
+      }
+    }
+  }, [user, paymentPhoneNumber]);
 
   // 🚚 NOUVEAU : Récupérer le transporteur assigné depuis localStorage (optimisé avec useMemo)
   const assignedCarrier = React.useMemo(() => {
@@ -342,7 +401,7 @@ const ClientSendParcel = () => {
     // Informations de base EVA
     ride_type_id: 2, // Par défaut : livraison
     vehicle_type_id: 2, // Motorcycle par défaut
-    zone_id: 3, // Côte d'Ivoire selon l'exemple EVA
+    zone_id: 10, // Côte d'Ivoire selon l'exemple EVA
     business_id: null,
 
     // Mode d'expédition et service
@@ -379,6 +438,8 @@ const ClientSendParcel = () => {
     
     // Options de livraison
     tip_amount: 0,
+    delivery_amount: '', // Montant à payer à la livraison (pour entreprises)
+    delivery_description: '', // Description du montant à payer à la livraison
     total_price: 0,
     
     // 🚀 NOUVEAU : Type de service
@@ -404,11 +465,13 @@ const ClientSendParcel = () => {
   const [currentItem, setCurrentItem] = useState({
     name: '',
     category: 'Général',
+    packageFormat: '', // Format de colis standardisé
     weight: '',
     length: '',
     width: '',
     height: '',
-    quantity: 1
+    quantity: 1,
+    description: ''
   });
 
   // Mock data pour les catégories et véhicules
@@ -426,6 +489,71 @@ const ClientSendParcel = () => {
   'Autres / Divers'
 ]);
 
+  // Formats de colis standardisés
+  const [packageFormats] = useState([
+    {
+      id: 'xs',
+      name: 'XS – Petit Colis',
+      volume: 5000, // cm³
+      weight: 2, // kg
+      dimensions: { length: 25, width: 20, height: 10 },
+      examples: 'Documents, accessoires, petits appareils',
+      description: 'Volume max: ~5 000 cm³ (25×20×10 cm) • Poids max: 2 kg'
+    },
+    {
+      id: 's',
+      name: 'S – Colis Moyen',
+      volume: 20000, // cm³
+      weight: 5, // kg
+      dimensions: { length: 40, width: 25, height: 20 },
+      examples: 'Vêtements, petite électronique, articles ménagers',
+      description: 'Volume max: ~20 000 cm³ (40×25×20 cm) • Poids max: 5 kg'
+    },
+    {
+      id: 'm',
+      name: 'M – Colis Standard',
+      volume: 50000, // cm³
+      weight: 15, // kg
+      dimensions: { length: 50, width: 30, height: 30 },
+      examples: 'Électroménager compact, produits alimentaires',
+      description: 'Volume max: ~50 000 cm³ (50×30×30 cm) • Poids max: 15 kg'
+    },
+    {
+      id: 'l',
+      name: 'L – Grand Colis',
+      volume: 120000, // cm³
+      weight: 25, // kg
+      dimensions: { length: 60, width: 40, height: 50 },
+      examples: 'Matériel professionnel, gros équipements',
+      description: 'Volume max: ~120 000 cm³ (60×40×50 cm) • Poids max: 25 kg'
+    },
+    {
+      id: 'xl',
+      name: 'XL – Colis Spécial / Hors Gabarit',
+      volume: null, // À saisir manuellement
+      weight: null, // À saisir manuellement
+      dimensions: { length: null, width: null, height: null },
+      examples: 'Articles sur mesure, équipements volumineux',
+      description: 'Format personnalisé - Saisie manuelle des dimensions et poids'
+    }
+  ]);
+
+
+  // Fonction pour remplir automatiquement les champs selon le format de colis
+  const handlePackageFormatChange = (formatId) => {
+    const selectedFormat = packageFormats.find(format => format.id === formatId);
+    
+    if (selectedFormat) {
+      setCurrentItem(prev => ({
+        ...prev,
+        packageFormat: formatId,
+        weight: selectedFormat.weight || '',
+        length: selectedFormat.dimensions.length || '',
+        width: selectedFormat.dimensions.width || '',
+        height: selectedFormat.dimensions.height || ''
+      }));
+    }
+  };
 
   // Gestion des étapes (TON STYLE) - MODIFIÉ : Étapes 1 et 2 combinées
   const steps = [
@@ -622,14 +750,20 @@ const ClientSendParcel = () => {
 
   // Ajouter un article
   const addItem = () => {
-    if (!currentItem.name || !currentItem.weight) {
-      setEvaError('Veuillez remplir au minimum le nom et le poids de l\'article');
+    if (!currentItem.name || !currentItem.packageFormat) {
+      setEvaError('Veuillez remplir au minimum le nom et le format de colis de l\'article');
+      return;
+    }
+
+    // Validation spéciale pour le format XL
+    if (currentItem.packageFormat === 'xl' && !currentItem.weight) {
+      setEvaError('Pour le format XL, veuillez saisir le poids de l\'article');
       return;
     }
 
     const newItem = {
       ...currentItem,
-      weight: parseFloat(currentItem.weight),
+      weight: parseFloat(currentItem.weight) || 0,
       length: parseFloat(currentItem.length) || 0,
       width: parseFloat(currentItem.width) || 0,
       height: parseFloat(currentItem.height) || 0,
@@ -679,11 +813,13 @@ const ClientSendParcel = () => {
     setCurrentItem({
       name: '',
       category: 'Général',
+      packageFormat: '',
       weight: '',
       length: '',
       width: '',
       height: '',
-      quantity: 1
+      quantity: 1,
+      description: ''
     });
     setEvaError(null);
   };
@@ -888,43 +1024,132 @@ const ClientSendParcel = () => {
     }
   };
 
-  // 💳 NOUVELLE FONCTION : Charger les modes de paiement disponibles
+  // 🌍 FONCTION : Détecter automatiquement le pays de l'utilisateur via IP
+  const detectUserCountry = async () => {
+    try {
+      console.log('🌍 Détection automatique du pays via IP...');
+      
+      // Utiliser ipapi.co pour détecter le pays via IP
+      const response = await fetch('https://ipapi.co/json/');
+      
+      if (!response.ok) {
+        throw new Error(`Erreur détection pays: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('✅ Données géolocalisation IP:', data);
+      
+      const detectedCountry = data.country_code;
+      console.log('🌍 Pays détecté via IP:', detectedCountry);
+      // ✅ Si hors Afrique/support, forcer CI
+      const SUPPORTED_AFRICAN_CODES = ['CI','KE','BF','GN','GA','ML','SN','BJ','CM'];
+      return SUPPORTED_AFRICAN_CODES.includes(detectedCountry) ? detectedCountry : 'CI';
+      
+    } catch (error) {
+      console.error('❌ Erreur détection pays via IP:', error);
+      
+      // Fallback: essayer ipinfo.io
+      try {
+        console.log('🔄 Tentative avec ipinfo.io...');
+        const fallbackResponse = await fetch('https://ipinfo.io/json');
+        
+        if (fallbackResponse.ok) {
+          const fallbackData = await fallbackResponse.json();
+          console.log('✅ Données fallback ipinfo.io:', fallbackData);
+          const detected = fallbackData.country;
+          const SUPPORTED_AFRICAN_CODES = ['CI','KE','BF','GN','GA','ML','SN','BJ','CM'];
+          return SUPPORTED_AFRICAN_CODES.includes(detected) ? detected : 'CI';
+        }
+      } catch (fallbackError) {
+        console.error('❌ Erreur fallback ipinfo.io:', fallbackError);
+      }
+      
+      return 'CI'; // Fallback Côte d'Ivoire
+    }
+  };
+
+  // 💳 NOUVELLE FONCTION : Charger les modes de paiement via API Clapay
   const loadPaymentMethods = async () => {
     setIsLoadingPaymentMethods(true);
     try {
-      console.log('🔍 Chargement des modes de paiement...');
+      console.log('🔍 Chargement des modes de paiement via API Clapay...');
       
-      // Utilisation de la bonne fonction API
-      const response = await modepaiementAPI.getModepaiements();
+      // 1️⃣ Détecter automatiquement le pays de l'utilisateur via IP
+      let userCountry = await detectUserCountry();
+      console.log('🌍 Pays utilisateur détecté:', userCountry);
       
-      if (response && response.data && Array.isArray(response.data)) {
-        console.log('✅ Modes de paiement chargés:', response.data);
-        
-        // Filtrer uniquement les modes actifs et ajouter des icônes par défaut
-        const activeMethods = response.data
-          .filter(method => method.actif === true)
-          .map(method => ({
-            id: method.id,
-            nom: method.nomMethode,
-            icone: method.icone || '💳',
-            description: method.description || `Paiement via ${method.nomMethode}`,
-            montant_min: method.montant_min || 0,
-            montant_max: method.montant_max || 999999999,
-            type: method.type || 'autre'
-          }));
-        
-        setPaymentMethods(activeMethods);
-        
-        // Sélectionner automatiquement le premier mode de paiement s'il n'y en a pas
-        if (activeMethods.length > 0 && !selectedPaymentMethod) {
-          setSelectedPaymentMethod(activeMethods[0]);
+      // 2️⃣ Mapping des pays pour l'API Clapay
+      const COUNTRY_MAPPING = {
+        'Côte d\'Ivoire': 'CI',
+        'Kenya': 'KE',
+        'Burkina Faso': 'BF',
+        'Guinée Conakry': 'GN',
+        'Gabon': 'GA',
+        'Mali': 'ML',
+        'Sénégal': 'SN',
+        'Bénin': 'BJ',
+        'Cameroun': 'CM'
+      };
+      
+      // Convertir le nom du pays en code ISO si nécessaire
+      const countryCode = COUNTRY_MAPPING[userCountry] || userCountry;
+      console.log('🌍 Pays utilisateur détecté:', userCountry, '→ Code:', countryCode);
+      
+      // 3️⃣ Appeler l'API Clapay avec le pays de l'utilisateur
+      const clapayUrl = `https://nowallet-api.mpayment.africa/nowallet/api/fees/by/country?country=${countryCode}`;
+      console.log('🔗 URL API Clapay:', clapayUrl);
+      
+      const response = await fetch(clapayUrl, {
+        method: 'GET',
+        headers: {
+          'accept': 'application/json',
+          'Authorization': 'Bearer d41c1b19dce70da75aa3701887dff1aa14f2b7e082a700b2aa94e1427d7ec3e01b8e83090e89e41430161d46e2fbbbaa4c048285625d6dbacafbc8c6efaf5cd674d2e0b3df0181a6492abfd3f9e560b0707a89bb98dfe542f0aea0e59908763b'
         }
-      } else {
-        console.error('❌ Réponse API invalide pour les modes de paiement:', response);
-        throw new Error('Format de réponse API invalide');
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Erreur API Clapay: ${response.status} ${response.statusText}`);
       }
+      
+      const clapayData = await response.json();
+      console.log('✅ Données API Clapay reçues:', clapayData);
+      
+      if (Array.isArray(clapayData)) {
+        // 4️⃣ Transformer les données Clapay en format compatible
+        const transformedMethods = clapayData.map((method, index) => ({
+          id: method.id || index + 1,
+          nom: method.operator || method.description || 'Méthode de paiement',
+          icone: getPaymentIcon(method.operator),
+          description: method.description || `${method.operator} - ${method.currency}`,
+          montant_min: 0, // Pas de montant minimum dans l'API Clapay
+          montant_max: 999999999, // Pas de montant maximum dans l'API Clapay
+          type: getPaymentType(method.operator),
+          // Informations supplémentaires de Clapay
+          clapayData: {
+            fee_cashin: method.fee_cashin,
+            fee_cashout: method.fee_cashout,
+            fee_merchant: method.fee_merchant,
+            currency: method.currency,
+            country: method.country,
+            merchant: method.merchant
+          }
+        }));
+        
+        console.log('🔄 Méthodes transformées:', transformedMethods);
+        setPaymentMethods(transformedMethods);
+        
+        // Sélectionner automatiquement le premier mode de paiement
+        if (transformedMethods.length > 0 && !selectedPaymentMethod) {
+          setSelectedPaymentMethod(transformedMethods[0]);
+        }
+        
+        setPaymentMethodsError(null);
+      } else {
+        throw new Error('Format de réponse API Clapay invalide');
+      }
+      
     } catch (error) {
-      console.error('❌ Erreur lors du chargement des modes de paiement:', error);
+      console.error('❌ Erreur lors du chargement des modes de paiement Clapay:', error);
       setPaymentMethodsError(error.message);
       
       // Fallback avec des modes de paiement par défaut
@@ -939,6 +1164,46 @@ const ClientSendParcel = () => {
     } finally {
       setIsLoadingPaymentMethods(false);
     }
+  };
+
+  // 🎯 Fonction pour déterminer l'icône selon l'opérateur
+  const getPaymentIcon = (operator) => {
+    if (!operator) return '/OM.png'; // Image par défaut
+    
+    const operatorLower = operator.toLowerCase();
+    
+    if (operatorLower.includes('wave')) return '/WAVE.png';
+    if (operatorLower.includes('orange') || operatorLower.includes('om')) return '/OM.png';
+    if (operatorLower.includes('mtn')) return '/MTN.png';
+    if (operatorLower.includes('moov')) return '/MOOV.png';
+    if (operatorLower.includes('free')) return '/WAVE.png'; // Fallback pour Free
+    if (operatorLower.includes('emoney')) return '/WAVE.png'; // Fallback pour E-Money
+    if (operatorLower.includes('freemoney')) return '/WAVE.png'; // Fallback pour FreeMoney
+    if (operatorLower.includes('airtel')) return '/MTN.png'; // Fallback pour Airtel
+    if (operatorLower.includes('visa')) return '/OM.png'; // Fallback pour cartes
+    if (operatorLower.includes('mastercard')) return '/OM.png'; // Fallback pour cartes
+    
+    return '/OM.png'; // Image par défaut
+  };
+
+  // 🎯 Fonction pour déterminer le type de paiement
+  const getPaymentType = (operator) => {
+    if (!operator) return 'autre';
+    
+    const operatorLower = operator.toLowerCase();
+    
+    if (operatorLower.includes('wave') || operatorLower.includes('orange') || 
+        operatorLower.includes('mtn') || operatorLower.includes('moov') || 
+        operatorLower.includes('free') || operatorLower.includes('emoney') || 
+        operatorLower.includes('freemoney') || operatorLower.includes('airtel')) {
+      return 'mobile_money';
+    }
+    
+    if (operatorLower.includes('visa') || operatorLower.includes('mastercard')) {
+      return 'card';
+    }
+    
+    return 'autre';
   };
 
   // 🧮 NOUVELLE FONCTION : Calculer le tarif avec notre système complet (VERSION RELAYDEPOSITS)
@@ -1291,10 +1556,10 @@ const ClientSendParcel = () => {
     console.log('   - Adresse destination:', destinationAddress);
     console.log('   - Ville destination extraite:', destinationCity, '→ Zone:', destinationZone);
     
-    // Si les zones sont différentes, service régional automatique
+    // Si les zones sont différentes, service Interubaine automatique
     if (originZone && destinationZone && originZone !== destinationZone) {
-      console.log('   ✅ Zones différentes détectées → Service Régional automatique');
-      return 'regional';
+      console.log('   ✅ Zones différentes détectées → Service Interubaine automatique');
+      return 'interubaine';
     }
     
     // Même zone ou même ville = service standard
@@ -1339,7 +1604,7 @@ const ClientSendParcel = () => {
           'express': '2h à 4h',
           'standard': '24h à 48h',
           'economique': '48h à 78h',
-          'regional': '86H - 2-4 JOURS',
+          'interubaine': '86H - 2-4 JOURS',
           'simplicite': '24H - 0-1 JOUR'
         };
         updateExpeditionData('delais_livraison', serviceDelays[detectedService] || '24h à 48h');
@@ -1700,6 +1965,8 @@ const ClientSendParcel = () => {
         pickup_note: expeditionData.pickup_note || "",
         order_note: expeditionData.order_note || "",
         tip_amount: parseInt(expeditionData.tip_amount) || 0,
+        delivery_amount: parseFloat(expeditionData.delivery_amount) || 0, // Montant à payer à la livraison
+        delivery_description: expeditionData.delivery_description || "", // Description du montant à payer
         
         adresse_expediteur: {
           latitude: parseFloat(expeditionData.from_latitude),
@@ -1744,7 +2011,9 @@ const ClientSendParcel = () => {
             pickup_phone_number: expeditionData.pickup_phone_number || "",
             recipient_first_name: expeditionData.recipient_first_name || "",
             recipient_last_name: expeditionData.recipient_last_name || "",
-            pickup_email: expeditionData.pickup_email || ""
+            pickup_email: expeditionData.pickup_email || "",
+            delivery_amount: parseFloat(expeditionData.delivery_amount) || 0, // Montant à payer à la livraison
+            delivery_description: expeditionData.delivery_description || "" // Description du montant à payer
           };
         })(),
         
@@ -1781,7 +2050,90 @@ const ClientSendParcel = () => {
     }
   };
 
-  // 💳 NOUVELLE FONCTION : Valider le paiement et créer l'expédition
+  // 🔄 NOUVELLE FONCTION : Vérifier le statut du paiement
+  const checkPaymentStatus = async (signature) => {
+    try {
+      console.log('🔍 Vérification du statut de paiement pour la signature:', signature);
+      
+      const response = await modepaiementAPI.paiementcheckin({ signature });
+      console.log('✅ Réponse de vérification du paiement:', response.data);
+      
+      const paymentData = response.data;
+      
+      if (paymentData.status === 'SUCCESSFUL') {
+        console.log('🎉 Paiement confirmé avec succès !');
+        
+        // Arrêter la vérification automatique
+        if (paymentCheckIntervalRef.current) {
+          clearInterval(paymentCheckIntervalRef.current);
+          paymentCheckIntervalRef.current = null;
+        }
+        
+        // Créer l'expédition
+        await createExpeditionAfterPayment(paymentData);
+        
+      } else if (paymentData.status === 'FAILED' || paymentData.status === 'CLOSED') {
+        console.log('❌ Paiement échoué ou annulé');
+        
+        // Arrêter la vérification automatique
+        if (paymentCheckIntervalRef.current) {
+          clearInterval(paymentCheckIntervalRef.current);
+          paymentCheckIntervalRef.current = null;
+        }
+        
+        // Afficher le statut d'échec
+        setPaymentFinalStatus('failed');
+        setShowPaymentRedirect(true);
+        
+      } else {
+        console.log('⏳ Paiement encore en cours, statut:', paymentData.status);
+        // Continuer la vérification
+      }
+      
+    } catch (error) {
+      console.error('❌ Erreur lors de la vérification du paiement:', error);
+      // En cas d'erreur, continuer la vérification
+    }
+  };
+
+  // 🚀 NOUVELLE FONCTION : Créer l'expédition après confirmation du paiement
+  const createExpeditionAfterPayment = async (paymentData) => {
+    try {
+      console.log('📦 Création de l\'expédition après confirmation du paiement...');
+      
+      // Mettre à jour les données d'expédition avec les informations de paiement
+      const finalExpeditionData = {
+        ...pendingExpeditionData,
+        mode_paiement: selectedPaymentMethod.nom,
+        payment_confirmation: paymentData,
+        transaction_id: paymentData.transaction_id,
+        payment_amount: paymentData.amount,
+        payment_currency: paymentData.currency,
+        signature: paymentData.signature // 🔑 NOUVEAU : Signature du paiement
+      };
+
+      // Créer l'expédition
+      const response = await createExpedition(finalExpeditionData);
+      console.log('✅ Expédition créée avec succès après paiement:', response.data);
+      
+      // Stocker l'expédition créée
+      setCreatedExpedition(response.data);
+      
+      // Afficher le statut de succès
+      setPaymentFinalStatus('success');
+      setShowPaymentRedirect(true);
+      
+      // Passer à l'étape finale
+      setCurrentStep(6);
+      
+    } catch (error) {
+      console.error('❌ Erreur lors de la création de l\'expédition:', error);
+      setPaymentFinalStatus('error');
+      setShowPaymentRedirect(true);
+    }
+  };
+
+  // 💳 NOUVELLE FONCTION : Initialiser le paiement via l'API
   const handlePaymentValidation = async () => {
     if (!selectedPaymentMethod) {
       alert('❌ Veuillez sélectionner un mode de paiement');
@@ -1798,69 +2150,107 @@ const ClientSendParcel = () => {
       return;
     }
 
+    // 🚀 Mettre à jour l'état du paiement
+    setPaymentStep('initializing');
     setIsProcessingPayment(true);
 
     try {
-      console.log('💳 Traitement du paiement...');
+      console.log('💳 Initialisation du paiement...');
       console.log('💳 Mode de paiement sélectionné:', selectedPaymentMethod);
       console.log('💳 Données d\'expédition:', pendingExpeditionData);
 
-      // Mettre à jour le mode de paiement dans les données d'expédition
-      const finalExpeditionData = {
-        ...pendingExpeditionData,
-        mode_paiement: selectedPaymentMethod.nom
+      // 🔍 Récupérer les données nécessaires pour l'API de paiement
+      const phoneDigits = (paymentPhoneNumber || '').replace(/\D/g, '');
+      const paymentData = {
+        amount: pendingExpeditionData.montant || 0,
+        country_code: selectedPaymentMethod.clapayData?.country || 'CI', // Code pays depuis Clapay ou fallback CI
+        operators_code: selectedPaymentMethod.clapayData?.operator || selectedPaymentMethod.nom, // Code opérateur depuis Clapay (WAVE, ORANGE, MTN, etc.)
+        phone_number: phoneDigits // 📱 Numéro sans préfixe (+) ni code pays
       };
 
+      console.log('💳 Données envoyées à l\'API de paiement:', paymentData);
+
       // 🔍 VALIDATION : Vérifier les champs obligatoires
-      const requiredFields = [
-        'user', 'transporteur', 'adresse_expediteur', 'adresse_destinataire', 
-        'infocolis', 'montant', 'mode_paiement', 'mode_expedition'
-      ];
-      
-      const missingFields = requiredFields.filter(field => !finalExpeditionData[field]);
-      
-      if (missingFields.length > 0) {
-        throw new Error(`Champs manquants: ${missingFields.join(', ')}`);
+      if (!paymentData.amount || paymentData.amount <= 0) {
+        throw new Error('Montant invalide pour le paiement');
       }
 
-      console.log('📦 Création de l\'expédition avec paiement validé:', finalExpeditionData);
-      
-      // 🔍 DEBUG : Vérifier les champs spécifiques
-      console.log('🔍 VÉRIFICATION DES CHAMPS SPÉCIFIQUES:');
-      console.log('   - mode_expedition:', finalExpeditionData.mode_expedition);
-      console.log('   - type_service:', finalExpeditionData.type_service);
-      console.log('   - delais_livraison:', finalExpeditionData.delais_livraison);
-      console.log('   - shippingMode:', expeditionData.shippingMode);
-      console.log('   - type_service (expeditionData):', expeditionData.type_service);
-      console.log('   - delais_livraison (expeditionData):', expeditionData.delais_livraison);
+      if (!paymentData.country_code) {
+        throw new Error('Code pays manquant pour le paiement');
+      }
 
-      // Créer l'expédition
-      const response = await createExpedition(finalExpeditionData);
-      
-      console.log('✅ Expédition créée avec succès:', response.data);
-      
-      // Message de succès avec les informations importantes
-      const successMessage = `
-🎉 Expédition créée avec succès !
+      if (!paymentData.operators_code) {
+        throw new Error('Code opérateur manquant pour le paiement');
+      }
 
-📋 Numéro de commande: ${finalExpeditionData.order_number}
-🔑 Code de retrait: ${finalExpeditionData.code_retrait}
-💰 Montant: ${formatPrice(finalExpeditionData.montant)}
-💳 Mode de paiement: ${selectedPaymentMethod.nom}
-📍 De: ${finalExpeditionData.adresse_expediteur.address}
-📍 Vers: ${finalExpeditionData.adresse_destinataire.address}
+      if (!phoneDigits || phoneDigits.trim() === '') {
+        throw new Error('Numéro de téléphone manquant pour le paiement');
+      }
 
-Votre colis sera traité dans les plus brefs délais !
-      `.trim();
+      console.log('📡 Appel de l\'API initpaiement...');
       
-      // alert(successMessage); // Suppression de l'alerte brute
-      setAskPrintLabel(true); // Affiche le modal de confirmation d'impression
+      // 🚀 Appeler l'API d'initialisation du paiement
+      const response = await modepaiementAPI.initpaiement(paymentData);
+      
+      console.log('✅ Paiement initialisé avec succès:', response.data);
+      
+      // 💾 Stocker la réponse du paiement
+      setPaymentResponse(response.data);
+      setPaymentStep('success');
+      
+      // 💾 Mettre à jour les données d'expédition avec la réponse du paiement
+      setPendingExpeditionData(prev => ({
+        ...prev,
+        payment_response: response.data,
+        mode_paiement: selectedPaymentMethod.nom
+      }));
+
+              // 🚀 REDIRECTION VERS LE LIEN DE PAIEMENT
+        if (response.data.payment_url) {
+          console.log('🔗 Redirection vers le lien de paiement:', response.data.payment_url);
+          
+          // Afficher un message informatif à l'utilisateur
+          alert(`🎯 Redirection vers la page de paiement...
+          
+💰 Montant: ${formatPrice(paymentData.amount)}
+🌍 Pays: ${paymentData.country_code}
+💳 Opérateur: ${paymentData.operators_code}
+
+Vous allez être redirigé vers la page de paiement sécurisée.`);
+          
+          // Rediriger vers le lien de paiement
+          window.open(response.data.payment_url, '_blank');
+          
+          // 🎯 Passer à l'étape d'attente de confirmation de paiement
       setCurrentStep(5);
+          setAskPrintLabel(false); // Ne pas afficher l'impression tant que le paiement n'est pas confirmé
+          
+          // 🔄 DÉMARRER LA VÉRIFICATION AUTOMATIQUE DU PAIEMENT
+          if (response.data.signature) {
+            console.log('🔄 Démarrage de la vérification automatique du paiement...');
+            
+            // Première vérification immédiate
+            checkPaymentStatus(response.data.signature);
+            
+            // Démarrer la vérification toutes les 5 secondes
+            const interval = setInterval(() => {
+              checkPaymentStatus(response.data.signature);
+            }, 5000);
+            paymentCheckIntervalRef.current = interval;
+            
+            console.log('⏰ Vérification automatique démarrée toutes les 5 secondes');
+          } else {
+            console.warn('⚠️ Signature manquante, impossible de vérifier le statut du paiement');
+          }
+        } else {
+          throw new Error('Lien de paiement manquant dans la réponse de l\'API');
+        }
       
     } catch (err) {
-      console.error('❌ Erreur création expédition:', err);
+      console.error('❌ Erreur initialisation paiement:', err);
+      setPaymentStep('error');
       
-      let errorMessage = 'Erreur lors de la création de l\'expédition';
+      let errorMessage = 'Erreur lors de l\'initialisation du paiement';
       
       if (err.response?.data?.message) {
         errorMessage = err.response.data.message;
@@ -1940,6 +2330,72 @@ Votre colis sera traité dans les plus brefs délais !
     }
   };
 
+  // 🚚 États pour la gestion des expéditions
+  const [expeditions, setExpeditions] = useState([]);
+  const [loadingExpeditions, setLoadingExpeditions] = useState(false);
+  const [viewMode, setViewMode] = useState('grid'); // 'grid' ou 'list'
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showExpeditionsList, setShowExpeditionsList] = useState(false);
+
+  // 🚚 Fonction pour charger les expéditions
+  const loadExpeditions = async () => {
+    if (!user) return;
+    
+    setLoadingExpeditions(true);
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/expeditions/client/${user.id}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setExpeditions(data.expeditions || []);
+      } else {
+        console.error('Erreur lors du chargement des expéditions:', response.status);
+        setExpeditions([]);
+      }
+    } catch (error) {
+      console.error('Erreur lors du chargement des expéditions:', error);
+      setExpeditions([]);
+    } finally {
+      setLoadingExpeditions(false);
+    }
+  };
+
+  // 🔄 Fonction pour actualiser les expéditions
+  const handleRefreshExpeditions = () => {
+    loadExpeditions();
+  };
+
+  // 📋 Fonction pour copier le numéro de suivi
+  const copyTrackingNumber = (trackingNumber) => {
+    navigator.clipboard.writeText(trackingNumber);
+    // Vous pouvez ajouter une notification toast ici
+  };
+
+  // 🔍 Fonction pour filtrer les expéditions
+  const filteredExpeditions = useMemo(() => {
+    if (!searchQuery.trim()) return expeditions;
+    
+    return expeditions.filter(expedition => 
+      expedition.order_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      expedition.customer_first_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      expedition.customer_last_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      expedition.recipient_first_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      expedition.recipient_last_name?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [expeditions, searchQuery]);
+
+  // 🚚 Charger les expéditions au montage du composant
+  useEffect(() => {
+    if (user) {
+      loadExpeditions();
+    }
+  }, [user]);
+
   return (
     <div className="space-y-6">
       {/* Header (TON STYLE) */}
@@ -1954,7 +2410,7 @@ Votre colis sera traité dans les plus brefs délais !
         </div>
         
         {/* Boutons de test pour remplir les données d'exemple */}
-        <div className="hidden sm:flex space-x-2">
+        {/* <div className="hidden sm:flex space-x-2">
           <Button
             variant="outline"
             size="sm"
@@ -1971,7 +2427,7 @@ Votre colis sera traité dans les plus brefs délais !
             <MapPin className="w-4 h-4 mr-2" />
             Test Point Relais
           </Button>
-        </div>
+        </div> */}
       </div>
 
       {/* Stepper (TON STYLE) - Responsive pour 6 étapes */}
@@ -2045,6 +2501,269 @@ Votre colis sera traité dans les plus brefs délais !
             </React.Fragment>
           ))}
         </div>
+      </div>
+
+      {/* Section des expéditions existantes */}
+      <div className="hidden bg-white dark:bg-dark-bg-secondary rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-3">
+            <Package className="w-6 h-6 text-ksl-red" />
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+              Mes Expéditions
+            </h2>
+            <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
+              {expeditions.length} expédition(s)
+            </Badge>
+          </div>
+          
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={() => setShowExpeditionsList(!showExpeditionsList)}
+              className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2"
+            >
+              {showExpeditionsList ? 'Masquer' : 'Afficher'} les expéditions
+            </button>
+            
+            {showExpeditionsList && (
+              <div className="flex border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden">
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`px-3 py-2 flex items-center gap-2 transition-colors ${
+                    viewMode === 'grid'
+                      ? 'bg-ksl-red text-white'
+                      : 'bg-white dark:bg-dark-bg-secondary text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <Grid className="w-4 h-4" />
+                  <span className="hidden sm:inline">Grille</span>
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`px-3 py-2 flex items-center gap-2 transition-colors border-l border-gray-300 dark:border-gray-600 ${
+                    viewMode === 'list'
+                      ? 'bg-ksl-red text-white'
+                      : 'bg-white dark:bg-dark-bg-secondary text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <List className="w-4 h-4" />
+                  <span className="hidden sm:inline">Liste</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Affichage des expéditions */}
+        {showExpeditionsList && (
+          <div className="space-y-4">
+            {/* Barre de recherche et actualisation */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
+                <input
+                  type="text"
+                  placeholder="Rechercher par numéro de suivi, nom..."
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-ksl-red focus:border-transparent"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              
+              <button
+                onClick={handleRefreshExpeditions}
+                disabled={loadingExpeditions}
+                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2 disabled:opacity-50"
+              >
+                {loadingExpeditions ? (
+                  <Loader className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                Actualiser
+              </button>
+            </div>
+
+            {/* État de chargement */}
+            {loadingExpeditions && (
+              <div className="text-center py-8">
+                <Loader className="w-8 h-8 text-ksl-red mx-auto mb-2 animate-spin" />
+                <p className="text-gray-600 dark:text-gray-400">Chargement des expéditions...</p>
+              </div>
+            )}
+
+            {/* Affichage des expéditions */}
+            {!loadingExpeditions && (
+              <>
+                {filteredExpeditions.length > 0 ? (
+                  <>
+                    {viewMode === 'grid' ? (
+                      // Mode Grille - Cartes
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {filteredExpeditions.map(expedition => (
+                          <div key={expedition.id} className="bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 hover:shadow-md transition-shadow">
+                            {/* Header */}
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex items-center space-x-2">
+                                <Package className="w-5 h-5 text-ksl-red" />
+                                <div>
+                                  <h3 className="font-semibold text-gray-900 dark:text-white text-sm">
+                                    {expedition.order_number || `KSL${expedition.id}`}
+                                  </h3>
+                                  <p className="text-xs text-gray-600 dark:text-gray-400">
+                                    {expedition.date_creation ? new Date(expedition.date_creation).toLocaleDateString('fr-FR') : 'Date inconnue'}
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => copyTrackingNumber(expedition.order_number || `KSL${expedition.id}`)}
+                                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                              >
+                                <Copy className="w-4 h-4" />
+                              </button>
+                            </div>
+                            
+                            {/* Informations */}
+                            <div className="space-y-2 mb-3">
+                              <div className="text-xs">
+                                <span className="text-gray-500 dark:text-gray-400">De: </span>
+                                <span className="font-medium text-gray-900 dark:text-white">
+                                  {expedition.customer_first_name} {expedition.customer_last_name}
+                                </span>
+                              </div>
+                              <div className="text-xs">
+                                <span className="text-gray-500 dark:text-gray-400">À: </span>
+                                <span className="font-medium text-gray-900 dark:text-white">
+                                  {expedition.recipient_first_name} {expedition.recipient_last_name}
+                                </span>
+                              </div>
+                              <div className="text-xs">
+                                <span className="text-gray-500 dark:text-gray-400">Poids: </span>
+                                <span className="font-medium text-gray-900 dark:text-white">
+                                  {expedition.poids || 'N/A'} kg
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {/* Statut */}
+                            <div className="flex items-center justify-between">
+                              <Badge 
+                                variant={expedition.statut_colis === 'livré' ? 'success' : 'secondary'}
+                                className="text-xs"
+                              >
+                                {expedition.statut_colis || 'En cours'}
+                              </Badge>
+                              <span className="text-sm font-bold text-gray-900 dark:text-white">
+                                {expedition.montant ? `${parseFloat(expedition.montant).toLocaleString('fr-FR')} FCFA` : 'N/A'}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      // Mode Liste - Tableau
+                      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead className="bg-gray-100 dark:bg-gray-700">
+                              <tr>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                  N° Suivi
+                                </th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                  Expéditeur
+                                </th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                  Destinataire
+                                </th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                  Poids
+                                </th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                  Statut
+                                </th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                  Montant
+                                </th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                  Date
+                                </th>
+                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                  Actions
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                              {filteredExpeditions.map((expedition) => (
+                                <tr key={expedition.id} className="hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                                  <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">
+                                    <div className="flex items-center space-x-2">
+                                      <Package className="w-4 h-4 text-ksl-red" />
+                                      <span>{expedition.order_number || `KSL${expedition.id}`}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                                    {expedition.customer_first_name} {expedition.customer_last_name}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                                    {expedition.recipient_first_name} {expedition.recipient_last_name}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                                    {expedition.poids || 'N/A'} kg
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <Badge 
+                                      variant={expedition.statut_colis === 'livré' ? 'success' : 'secondary'}
+                                      className="text-xs"
+                                    >
+                                      {expedition.statut_colis || 'En cours'}
+                                    </Badge>
+                                  </td>
+                                  <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">
+                                    {expedition.montant ? `${parseFloat(expedition.montant).toLocaleString('fr-FR')} FCFA` : 'N/A'}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                                    {expedition.date_creation ? new Date(expedition.date_creation).toLocaleDateString('fr-FR') : 'N/A'}
+                                  </td>
+                                  <td className="px-4 py-3 text-right">
+                                    <button
+                                      onClick={() => copyTrackingNumber(expedition.order_number || `KSL${expedition.id}`)}
+                                      className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                                      title="Copier le numéro de suivi"
+                                    >
+                                      <Copy className="w-4 h-4" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center py-8">
+                    <Package className="w-16 h-16 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                      {expeditions.length === 0 ? 'Aucune expédition' : 'Aucune expédition trouvée'}
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-400 mb-4">
+                      {expeditions.length === 0 
+                        ? 'Vous n\'avez pas encore créé d\'expédition'
+                        : 'Modifiez vos critères de recherche'
+                      }
+                    </p>
+                    {expeditions.length === 0 && (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        Commencez par créer votre première expédition ci-dessous
+                      </p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Contenu principal (TON STYLE) */}
@@ -2153,17 +2872,24 @@ Votre colis sera traité dans les plus brefs délais !
                         <Target className="w-4 h-4 mr-2 text-ksl-red" />
                         Coordonnées GPS de ramassage *
                       </h3>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => getCurrentLocation('from')}
-                      >
-                        <LocateFixed className="w-4 h-4 mr-1" />
-                        Ma position
-                      </Button>
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          checked={locationTrackingEnabled}
+                          onCheckedChange={(checked) => {
+                            setLocationTrackingEnabled(checked);
+                            if (checked) {
+                              getCurrentLocation('from');
+                            }
+                          }}
+                        />
+                        <span className="text-sm text-gray-600 dark:text-gray-300">
+                          Utiliser ma position
+                        </span>
+                      </div>
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-4">
+                    {/* Champs de coordonnées cachés mais toujours fonctionnels */}
+                    <div className="hidden">
                       <Input
                         label="Latitude *"
                         type="number"
@@ -2182,10 +2908,10 @@ Votre colis sera traité dans les plus brefs délais !
                       />
                     </div>
                     
-                    {expeditionData.from_latitude && expeditionData.from_longitude && (
+                    {locationTrackingEnabled && expeditionData.from_latitude && expeditionData.from_longitude && (
                       <Alert variant="success" className="mt-3">
                         <CheckCircle className="w-4 h-4" />
-                        Position confirmée: {expeditionData.from_latitude}, {expeditionData.from_longitude}
+                        Position GPS activée et confirmée
                       </Alert>
                     )}
                   </Card>
@@ -2199,7 +2925,7 @@ Votre colis sera traité dans les plus brefs délais !
                 </div>
 
                 {/* Séparateur visuel */}
-                <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+                <div className="hidden border-t border-gray-200 dark:border-gray-700 pt-6">
                   <div className="flex items-center justify-center mb-6">
                     <div className="bg-gray-100 dark:bg-gray-800 px-4 py-2 rounded-full">
                       <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
@@ -2327,7 +3053,7 @@ Votre colis sera traité dans les plus brefs délais !
                         </div>
 
                         {/* Coordonnées GPS du point relais (automatiquement remplies) */}
-                        <Card className="p-4 bg-green-50 dark:bg-green-900/20">
+                        <Card className="hidden p-4 bg-green-50 dark:bg-green-900/20">
                           <div className="flex items-center justify-between mb-3">
                             <h3 className="font-medium text-gray-900 dark:text-white flex items-center">
                               <Target className="w-4 h-4 mr-2 text-ksl-red" />
@@ -2377,7 +3103,7 @@ Votre colis sera traité dans les plus brefs délais !
                             </h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <Input
-                                label="Entreprise de ramassage / Nom de la personne à remettre le colis"
+                                label="Entreprise à remettre le colis"
                                 value={expeditionData.pickup_company_name}
                                 onChange={(e) => updateExpeditionData('pickup_company_name', e.target.value)}
                                 leftIcon={Building}
@@ -2414,17 +3140,16 @@ Votre colis sera traité dans les plus brefs délais !
                               placeholder="email@exemple.com"
                             />
                             <Input
-                              label="Numéro de commande (5 chiffres)"
+                              label="Numéro de commande"
                               value={expeditionData.order_number || ''}
                               onChange={(e) => {
-                                // Limiter à 5 chiffres numériques
-                                const val = e.target.value.replace(/\D/g, '').slice(0, 5);
+                                // Limiter à 30 caractères alphanumériques
+                                const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 30);
                                 updateExpeditionData('order_number', val);
                               }}
                               leftIcon={FileText}
-                              placeholder="Saisir 5 chiffres"
-                              maxLength={5}
-                              inputMode="numeric"
+                              placeholder="Saisir votre numéro de commande ex: 1du234567fd890"
+                              maxLength={30}
                             />
                           </div>
                         ) : null}
@@ -2497,23 +3222,30 @@ Votre colis sera traité dans les plus brefs délais !
                         </div>
 
                         {/* Coordonnées GPS Destinataire */}
-                        <Card className="p-4 bg-green-50 dark:bg-green-900/20">
+                        <Card className="hidden p-4 bg-green-50 dark:bg-green-900/20">
                           <div className="flex items-center justify-between mb-3">
                             <h3 className="font-medium text-gray-900 dark:text-white flex items-center">
                               <Target className="w-4 h-4 mr-2 text-ksl-red" />
                               Coordonnées GPS de livraison *
                             </h3>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => getCurrentLocation('to')}
-                            >
-                              <LocateFixed className="w-4 h-4 mr-1" />
-                              Ma position
-                            </Button>
+                            <div className="flex items-center space-x-2">
+                              <Switch
+                                checked={locationTrackingEnabled}
+                                onCheckedChange={(checked) => {
+                                  setLocationTrackingEnabled(checked);
+                                  if (checked) {
+                                    getCurrentLocation('to');
+                                  }
+                                }}
+                              />
+                              <span className="text-sm text-gray-600 dark:text-gray-300">
+                                Utiliser ma position
+                              </span>
+                            </div>
                           </div>
                           
-                          <div className="grid grid-cols-2 gap-4">
+                          {/* Champs de coordonnées cachés mais toujours fonctionnels */}
+                          <div className="hidden">
                             <Input
                               label="Latitude *"
                               type="number"
@@ -2532,10 +3264,10 @@ Votre colis sera traité dans les plus brefs délais !
                             />
                           </div>
                           
-                          {expeditionData.to_latitude && expeditionData.to_longitude && (
+                          {locationTrackingEnabled && expeditionData.to_latitude && expeditionData.to_longitude && (
                             <Alert variant="success" className="mt-3">
                               <CheckCircle className="w-4 h-4" />
-                              Position confirmée: {expeditionData.to_latitude}, {expeditionData.to_longitude}
+                              Position GPS activée et confirmée
                             </Alert>
                           )}
                         </Card>
@@ -2551,13 +3283,13 @@ Votre colis sera traité dans les plus brefs délais !
                             </h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <Input
-                                label="Entreprise de ramassage / Nom de la personne à remettre le colis"
+                                label="Entreprise à remettre le colis"
                                 value={expeditionData.pickup_company_name}
                                 onChange={(e) => updateExpeditionData('pickup_company_name', e.target.value)}
                                 leftIcon={Building}
                               />
                               <Input
-                                label="Téléphone du point de ramassage / Téléphone de la personne à remettre le colis"
+                                label="Téléphone de la personne à remettre le colis"
                                 value={expeditionData.pickup_phone_number}
                                 onChange={(e) => updateExpeditionData('pickup_phone_number', e.target.value)}
                                 leftIcon={Phone}
@@ -2588,17 +3320,16 @@ Votre colis sera traité dans les plus brefs délais !
                               placeholder="email@exemple.com"
                             />
                             <Input
-                              label="Numéro de commande (5 chiffres)"
+                              label="Numéro de commande"
                               value={expeditionData.order_number || ''}
                               onChange={(e) => {
-                                // Limiter à 5 chiffres numériques
-                                const val = e.target.value.replace(/\D/g, '').slice(0, 5);
+                                // Limiter à 30 caractères alphanumériques
+                                const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 30);
                                 updateExpeditionData('order_number', val);
                               }}
                               leftIcon={FileText}
-                              placeholder="Saisir 5 chiffres"
-                              maxLength={5}
-                              inputMode="numeric"
+                              placeholder="Entrez votre numéro de commande ex: 1du234567fd890"
+                              maxLength={30}
                             />
                           </div>
                         ) : null}
@@ -2655,14 +3386,23 @@ Votre colis sera traité dans les plus brefs délais !
                       </select>
                     </div>
                     
-                    <Input
-                      label="Poids (kg) *"
-                      type="number"
-                      step="0.1"
-                      value={currentItem.weight}
-                      onChange={(e) => setCurrentItem(prev => ({...prev, weight: e.target.value}))}
-                      placeholder="0.0"
-                    />
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Format de colis *
+                      </label>
+                      <select
+                        value={currentItem.packageFormat}
+                        onChange={(e) => handlePackageFormatChange(e.target.value)}
+                        className="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 bg-white dark:bg-dark-bg-secondary focus:outline-none focus:ring-2 focus:ring-ksl-red focus:border-transparent"
+                      >
+                        <option value="">Sélectionner un format</option>
+                        {packageFormats.map(format => (
+                          <option key={format.id} value={format.id}>
+                            {format.name} - {format.description}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                     
                     <Input
                       label="Quantité"
@@ -2673,29 +3413,72 @@ Votre colis sera traité dans les plus brefs délais !
                     />
                   </div>
 
-                  <div className="grid grid-cols-3 gap-4 mb-4">
+                  {/* Champs de poids et dimensions - visibles seulement pour XL */}
+                  {currentItem.packageFormat === 'xl' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      <Input
+                        label="Poids (kg) *"
+                        type="number"
+                        step="0.1"
+                        value={currentItem.weight}
+                        onChange={(e) => setCurrentItem(prev => ({...prev, weight: e.target.value}))}
+                        placeholder="0.0"
+                      />
+                      
+                      <Input
+                        label="Longueur (cm)"
+                        type="number"
+                        value={currentItem.length}
+                        onChange={(e) => setCurrentItem(prev => ({...prev, length: e.target.value}))}
+                        placeholder="0"
+                      />
+                      
+                      <Input
+                        label="Largeur (cm)"
+                        type="number"
+                        value={currentItem.width}
+                        onChange={(e) => setCurrentItem(prev => ({...prev, width: e.target.value}))}
+                        placeholder="0"
+                      />
+                      
+                      <Input
+                        label="Hauteur (cm)"
+                        type="number"
+                        value={currentItem.height}
+                        onChange={(e) => setCurrentItem(prev => ({...prev, height: e.target.value}))}
+                        placeholder="0"
+                      />
+                    </div>
+                  )}
+
+                  {/* Affichage des informations du format sélectionné */}
+                  {currentItem.packageFormat && currentItem.packageFormat !== 'xl' && (
+                    <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <Package className="w-4 h-4 text-ksl-red" />
+                        <span className="font-medium text-gray-900 dark:text-white">
+                          {packageFormats.find(f => f.id === currentItem.packageFormat)?.name}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        {packageFormats.find(f => f.id === currentItem.packageFormat)?.description}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                        Exemples : {packageFormats.find(f => f.id === currentItem.packageFormat)?.examples}
+                      </p>
+                    </div>
+                  )}
+
+
+
+                  <div className="hidden mb-4">
                     <Input
-                      label="Longueur (cm)"
-                      type="number"
-                      value={currentItem.length}
-                      onChange={(e) => setCurrentItem(prev => ({...prev, length: e.target.value}))}
-                      placeholder="0"
-                    />
-                    
-                    <Input
-                      label="Largeur (cm)"
-                      type="number"
-                      value={currentItem.width}
-                      onChange={(e) => setCurrentItem(prev => ({...prev, width: e.target.value}))}
-                      placeholder="0"
-                    />
-                    
-                    <Input
-                      label="Hauteur (cm)"
-                      type="number"
-                      value={currentItem.height}
-                      onChange={(e) => setCurrentItem(prev => ({...prev, height: e.target.value}))}
-                      placeholder="0"
+                      label="Instructions / Description"
+                      value={currentItem.description}
+                      onChange={(e) => setCurrentItem(prev => ({...prev, description: e.target.value}))}
+                      placeholder="Instructions spéciales, description détaillée, précautions..."
+                      leftIcon={FileText}
+                      hint="Décrivez l'article ou ajoutez des instructions spéciales"
                     />
                   </div>
 
@@ -2704,6 +3487,8 @@ Votre colis sera traité dans les plus brefs délais !
                     Ajouter l'article
                   </Button>
                 </Card>
+
+              
 
                 {/* Liste des articles ajoutés */}
                 {expeditionData.pickup_items.length > 0 && (
@@ -2719,11 +3504,26 @@ Votre colis sera traité dans les plus brefs délais !
                             <h4 className="font-medium text-gray-900 dark:text-white">
                               {item.name} 
                               <Badge className="ml-2">{item.category}</Badge>
+                              {item.packageFormat && (
+                                <Badge variant="info" className="ml-2">
+                                  {packageFormats.find(f => f.id === item.packageFormat)?.name.split(' – ')[0]}
+                                </Badge>
+                              )}
                             </h4>
                             <p className="text-sm text-gray-600 dark:text-gray-400">
                               {item.weight}kg • {item.quantity} unité(s) • 
                               {item.length}×{item.width}×{item.height}cm
+                              {item.packageFormat && item.packageFormat !== 'xl' && (
+                                <span className="text-blue-600 dark:text-blue-400">
+                                  {' • '}{packageFormats.find(f => f.id === item.packageFormat)?.description}
+                                </span>
+                              )}
                             </p>
+                            {item.description && (
+                              <p className="text-sm text-gray-500 dark:text-gray-500 mt-1 italic">
+                                📝 {item.description}
+                              </p>
+                            )}
                           </div>
                           <Button
                             variant="outline"
@@ -2759,6 +3559,37 @@ Votre colis sera traité dans les plus brefs délais !
                       </p>
                     </Alert>
                   </div>
+                )}
+
+  {/* Champ montant à payer à la livraison - visible uniquement pour les entreprises */}
+  {user?.role === 'entreprise' && (
+                  <Card className="p-4 bg-blue-50 dark:bg-blue-900/20">
+                    <h3 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center">
+                      <CreditCard className="w-4 h-4 mr-2 text-ksl-red" />
+                      Montant à payer à la livraison
+                    </h3>
+                    <Input
+                      label="Montant (optionnel)"
+                      type="number"
+                      step="0.01"
+                      value={expeditionData.delivery_amount || ''}
+                      onChange={(e) => updateExpeditionData('delivery_amount', e.target.value)}
+                      placeholder="0.00"
+                      leftIcon={CreditCard}
+                      hint="Montant que le destinataire devra payer à la livraison"
+                    />
+                    
+                    <div className="mt-4">
+                      <Input
+                        label="Description du paiement (optionnel)"
+                        value={expeditionData.delivery_description || ''}
+                        onChange={(e) => updateExpeditionData('delivery_description', e.target.value)}
+                        placeholder="Ex: Montant de la commande, Paiement des frais de douane, acompte sur commande, etc..."
+                        leftIcon={FileText}
+                        hint="Description détaillée du montant à payer"
+                      />
+                    </div>
+                  </Card>
                 )}
 
                 {/* Message informatif pour la sélection du véhicule */}
@@ -2929,11 +3760,11 @@ Votre colis sera traité dans les plus brefs délais !
                   </label>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                     {[
-                      { key: 'express', name: 'Express', icon: '⚡', description: 'Rapide', factor: 1.5, delais: '2h à 4h', color: 'orange' },
+                      { key: 'flash', name: 'Flash', icon: '⚡', description: 'Rapide', factor: 1.5, delais: '2h à 4h', color: 'orange' },
+                      { key: 'express', name: 'Express', icon: '🎯', description: 'Simple', factor: 1.2, delais: '24H - 0-1 JOUR', color: 'red' },
                       { key: 'standard', name: 'Standard', icon: '📦', description: 'Normal', factor: 1.0, delais: '24h à 48h', color: 'blue' },
                       { key: 'economique', name: 'Économique', icon: '💰', description: 'Éco', factor: 0.8, delais: '48h à 78h', color: 'green' },
-                      { key: 'regional', name: 'Régional', icon: '🌍', description: 'Régional', factor: 0.9, delais: '86H - 2-4 JOURS', color: 'purple' },
-                      { key: 'simplicite', name: 'Simplicité', icon: '🎯', description: 'Simple', factor: 1.2, delais: '24H - 0-1 JOUR', color: 'red' }
+                      { key: 'interubaine', name: 'Interubaine', icon: '🌍', description: 'Interubaine', factor: 0.9, delais: '86H - 2-4 JOURS', color: 'purple' },
                     ].map((service) => (
                       <button
                         key={service.key}
@@ -2952,19 +3783,19 @@ Votre colis sera traité dans les plus brefs délais !
                         {/* Badge du pourcentage */}
                         <div className="flex items-start justify-between mb-2">
                           <span className="text-2xl">{service.icon}</span>
-                          <Badge 
+                          {/* <Badge 
                             variant={expeditionData.type_service === service.key ? 'default' : 'secondary'}
                             className={cn(
                               'text-xs',
                               service.key === 'express' && 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400',
                               service.key === 'economique' && 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400',
                               service.key === 'standard' && 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400',
-                              service.key === 'regional' && 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400',
+                              service.key === 'interubaine' && 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400',
                               service.key === 'simplicite' && 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
                             )}
                           >
                             {service.description}
-                          </Badge>
+                          </Badge> */}
                         </div>
                         
                         <div className="space-y-1">
@@ -2976,7 +3807,7 @@ Votre colis sera traité dans les plus brefs délais !
                             {service.key === 'express' && 'Livraison rapide, priorité maximale'}
                             {service.key === 'standard' && 'Livraison normale, bon rapport qualité/prix'}
                             {service.key === 'economique' && 'Livraison économique, délai plus long'}
-                            {service.key === 'regional' && 'Livraison régionale, couverture étendue'}
+                            {service.key === 'interubaine' && 'Livraison interubaine, couverture étendue'}
                             {service.key === 'simplicite' && 'Livraison simple, service basique'}
                           </div>
                           
@@ -2984,9 +3815,9 @@ Votre colis sera traité dans les plus brefs délais !
                             Délai: {service.delais}
                           </div>
                           
-                          <div className="text-xs text-gray-500 dark:text-gray-500">
+                          {/* <div className="text-xs text-gray-500 dark:text-gray-500">
                             Facteur de prix: ×{service.factor}
-                          </div>
+                          </div> */}
                         </div>
                         
                         {/* Indicateur de sélection */}
@@ -3001,11 +3832,11 @@ Votre colis sera traité dans les plus brefs délais !
                   
                   {/* Information supplémentaire sur le service sélectionné */}
                   {expeditionData.type_service && (
-                    <Alert variant={expeditionData.type_service === 'regional' ? 'warning' : 'info'} className="mt-3">
+                    <Alert variant={expeditionData.type_service === 'interubaine' ? 'warning' : 'info'} className="mt-3">
                       <Info className="w-4 h-4" />
                       <p className="text-sm">
-                        <strong>Service {expeditionData.type_service === 'express' ? 'Express' : expeditionData.type_service === 'standard' ? 'Standard' : expeditionData.type_service === 'economique' ? 'Économique' : expeditionData.type_service === 'regional' ? 'Régional' : 'Simplicité'} sélectionné</strong>
-                        {expeditionData.type_service === 'regional' && (
+                        <strong>Service {expeditionData.type_service === 'express' ? 'Express' : expeditionData.type_service === 'standard' ? 'Standard' : expeditionData.type_service === 'economique' ? 'Économique' : expeditionData.type_service === 'interubaine' ? 'Interubaine' : 'Simplicité'} sélectionné</strong>
+                        {expeditionData.type_service === 'interubaine' && (
                           <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400">
                             🌍 Automatique
                           </span>
@@ -3016,7 +3847,7 @@ Votre colis sera traité dans les plus brefs délais !
                         {expeditionData.type_service === 'express' && 'Votre colis sera traité en priorité avec un délai de livraison réduit (+50% du tarif de base).'}
                         {expeditionData.type_service === 'standard' && 'Service standard avec un bon équilibre entre prix et délai de livraison (tarif de base).'}
                         {expeditionData.type_service === 'economique' && 'Option économique avec un délai de livraison plus long mais un tarif réduit (-20% du tarif de base).'}
-                        {expeditionData.type_service === 'regional' && 'Service régional avec couverture étendue et délai de 2-4 jours (-10% du tarif de base). Automatiquement sélectionné car l\'expédition se fait entre des zones différentes.'}
+                        {expeditionData.type_service === 'interubaine' && 'Service Interubaine avec couverture étendue et délai de 2-4 jours (-10% du tarif de base). Automatiquement sélectionné car l\'expédition se fait entre des zones différentes.'}
                         {expeditionData.type_service === 'simplicite' && 'Service simple avec livraison basique en 0-1 jour (+20% du tarif de base).'}
                       </p>
                     </Alert>
@@ -3088,7 +3919,7 @@ Votre colis sera traité dans les plus brefs délais !
             {currentStep === 3 && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
+                  <div className="hidden flex items-center space-x-3">
                     <Calculator className="w-6 h-6 text-ksl-red" />
                     <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                       Calculer le devis EVA
@@ -3101,7 +3932,7 @@ Votre colis sera traité dans les plus brefs délais !
                     disabled={!validateStep(2)}
                   >
                     <Calculator className="w-4 h-4 mr-2" />
-                    Obtenir un devis
+                    Afficher le prix
                   </Button>
                 </div>
 
@@ -3165,7 +3996,7 @@ Votre colis sera traité dans les plus brefs délais !
                 )}
 
                 {/* Champs complémentaires */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="hidden grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Input
                     label="Pourboire (FCFA)"
                     type="number"
@@ -3186,18 +4017,43 @@ Votre colis sera traité dans les plus brefs délais !
             {/* Étape 4: Sélection du mode de paiement */}
             {currentStep === 4 && (
               <div className="space-y-6">
-                <div className="flex items-center space-x-3">
-                  <CreditCard className="w-6 h-6 text-ksl-red" />
-                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-                    💳 Choisir le mode de paiement
-                  </h2>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <CreditCard className="w-6 h-6 text-ksl-red" />
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                      💳 Choisir le mode de paiement
+                    </h2>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    {/* <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300">
+                      🌍 Détection IP
+                    </Badge>
+                    <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
+                      🚀 API Clapay
+                    </Badge> */}
+                    <Button
+                      onClick={loadPaymentMethods}
+                      variant="outline"
+                      size="sm"
+                      disabled={isLoadingPaymentMethods}
+                    >
+                      <RefreshCw className={cn('w-4 h-4', isLoadingPaymentMethods && 'animate-spin')} />
+                      Actualiser
+                    </Button>
+                  </div>
                 </div>
 
                 {/* Sélection du mode de paiement */}
                 <div className="space-y-4">
-                  <h4 className="font-medium text-gray-900 dark:text-white">
-                    Sélectionnez votre mode de paiement
-                  </h4>
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-gray-900 dark:text-white">
+                      Sélectionnez votre mode de paiement
+                    </h4>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Les méthodes disponibles sont chargées dynamiquement selon votre pays détecté automatiquement via IP
+                    </p>
+                  </div>
                   
                   {isLoadingPaymentMethods ? (
                     <div className="flex items-center justify-center p-8">
@@ -3215,7 +4071,7 @@ Votre colis sera traité dans les plus brefs délais !
                       Aucun mode de paiement disponible
                     </Alert>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {paymentMethods.map((method) => (
                         <div
                           key={method.id}
@@ -3241,14 +4097,21 @@ Votre colis sera traité dans les plus brefs délais !
                             
                             <div className="flex-1">
                               <div className="flex items-center space-x-2">
-                                <CreditCard className="w-5 h-5 text-ksl-red" />
+                                <img 
+                                  src={method.icone} 
+                                  alt={method.nom}
+                                  className="w-8 h-8 object-contain"
+                                  onError={(e) => {
+                                    e.target.src = '/OM.png'; // Fallback si l'image ne charge pas
+                                  }}
+                                />
                                 <span className="font-medium text-gray-900 dark:text-white">
-                                  {method.nomMethode}
+                                  {method.nom}
                                 </span>
-                                {method.fournisseur && (
-                                  <span className="text-xs text-gray-500 dark:text-gray-400">
-                                    ({method.fournisseur})
-                                  </span>
+                                {method.clapayData?.merchant && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    {method.clapayData.merchant}
+                                  </Badge>
                                 )}
                               </div>
                               
@@ -3258,10 +4121,16 @@ Votre colis sera traité dans les plus brefs délais !
                                 </p>
                               )}
                               
-                              {method.montant_min && method.montant_max && (
-                                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                                  Montant: {formatPrice(parseFloat(method.montant_min))} - {formatPrice(parseFloat(method.montant_max))}
-                                </p>
+                              {/* Informations Clapay simplifiées */}
+                              {method.clapayData && (
+                                <div className="mt-2">
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-gray-500 dark:text-gray-400">Devise:</span>
+                                    <span className="font-medium text-gray-900 dark:text-white">
+                                      {method.clapayData.currency}
+                                    </span>
+                                  </div>
+                                </div>
                               )}
                             </div>
                           </div>
@@ -3271,190 +4140,258 @@ Votre colis sera traité dans les plus brefs délais !
                   )}
                 </div>
 
+                {/* 📱 NOUVEAU : Champ numéro de paiement */}
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      📱 Numéro de téléphone pour le paiement
+                    </label>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Saisissez le numéro de téléphone associé à votre compte de paiement mobile
+                    </p>
+                  </div>
+                  
+                  <div className="flex space-x-3">
+                    <div className="w-24">
+                      <select 
+                        value={paymentCountryCode}
+                        onChange={(e) => {
+                          setPaymentCountryCode(e.target.value);
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-white focus:ring-2 focus:ring-ksl-red focus:border-transparent"
+                      >
+                        <option value="+225">🇨🇮 +225</option>
+                        <option value="+237">🇨🇲 +237</option>
+                        <option value="+226">🇧🇫 +226</option>
+                        <option value="+224">🇬🇳 +224</option>
+                        <option value="+241">🇬🇦 +241</option>
+                        <option value="+223">🇲🇱 +223</option>
+                        <option value="+221">🇸🇳 +221</option>
+                        <option value="+229">🇧🇯 +229</option>
+                      </select>
+                    </div>
+                    
+                    <div className="flex-1">
+                      <Input
+                        type="tel"
+                        placeholder="Numéro de téléphone"
+                        value={paymentPhoneNumber}
+                        onChange={(e) => {
+                          setPaymentPhoneNumber(e.target.value);
+                        }}
+                        className="w-full"
+                        required
+                      />
+                    </div>
+                  </div>
+                  
+                  {paymentPhoneNumber && (
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      Numéro complet : <span className="font-medium text-ksl-red">{paymentCountryCode}{paymentPhoneNumber}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 🚀 Indicateur de statut du paiement */}
+                {paymentStep !== 'idle' && (
+                  <div className="mt-4 p-4 rounded-lg border">
+                    {paymentStep === 'initializing' && (
+                      <div className="flex items-center space-x-3 text-blue-600 dark:text-blue-400">
+                        <Loader className="w-5 h-5 animate-spin" />
+                        <span className="font-medium">Initialisation du paiement en cours...</span>
+                      </div>
+                    )}
+                    
+                    {paymentStep === 'success' && (
+                      <div className="flex items-center space-x-3 text-green-600 dark:text-green-400">
+                        <CheckCircle className="w-5 h-5" />
+                        <span className="font-medium">Paiement initialisé avec succès !</span>
+                      </div>
+                    )}
+                    
+                    {paymentStep === 'error' && (
+                      <div className="flex items-center space-x-3 text-red-600 dark:text-red-400">
+                        <AlertCircle className="w-5 h-5" />
+                        <span className="font-medium">Erreur lors de l'initialisation du paiement</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Bouton de validation du paiement */}
                 <Button 
                   onClick={handlePaymentValidation}
                   className="w-full"
                   size="lg"
-                  disabled={!selectedPaymentMethod || isProcessingPayment}
+                  disabled={!selectedPaymentMethod || !paymentPhoneNumber || isProcessingPayment}
                   isLoading={isProcessingPayment}
                 >
                   <CreditCard className="w-5 h-5 mr-2" />
-                  {isProcessingPayment ? 'Traitement du paiement...' : 'Valider le paiement et créer l\'expédition'}
+                  {isProcessingPayment ? 'Initialisation du paiement...' : 'Initialiser le paiement'}
                 </Button>
               </div>
             )}
 
-            {/* Étape 5: Confirmation */}
+            {/* Étape 5: Attente de confirmation de paiement */}
             {currentStep === 5 && (
               <div className="space-y-8">
-                {/* Header de succès */}
+                {/* Header d'attente de paiement */}
                 <div className="text-center">
-                  <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle className="w-8 h-8 text-green-600" />
+                  <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Clock className="w-8 h-8 text-blue-600" />
                   </div>
                   <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-                    🎉 Expédition créée avec succès !
+                    💳 Paiement en cours de traitement
                   </h2>
                   <p className="text-gray-600 dark:text-gray-400">
-                    Votre expédition a été créée et sera traitée dans les plus brefs délais.
+                    Vous avez été redirigé vers la page de paiement. Veuillez finaliser votre paiement pour continuer.
                   </p>
                 </div>
 
-                {/* Récapitulatif complet */}
-                {pendingExpeditionData && (
+                {/* Informations de paiement */}
+                {paymentResponse && (
                   <div className="space-y-6">
-                    {/* Informations principales */}
+                    {/* Détails du paiement */}
                     <Card className="p-6 bg-gradient-to-r from-blue-50 to-green-50 dark:from-blue-900/20 dark:to-green-900/20">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {/* Numéro de commande */}
-                        <div className="text-center">
-                          <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
-                            <Package className="w-6 h-6 text-blue-600" />
-                          </div>
-                          <h4 className="font-semibold text-gray-900 dark:text-white mb-1">Numéro de commande</h4>
-                          <p className="font-mono text-lg text-blue-600 dark:text-blue-400">
-                            {pendingExpeditionData.order_number}
-                          </p>
-                        </div>
-
-                        {/* Code de retrait */}
-                        <div className="text-center">
-                          <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
-                            <Key className="w-6 h-6 text-orange-600" />
-                          </div>
-                          <h4 className="font-semibold text-gray-900 dark:text-white mb-1">Code de retrait</h4>
-                          <p className="font-mono text-lg font-bold text-orange-600 dark:text-orange-400">
-                            {pendingExpeditionData.code_retrait}
-                          </p>
-                        </div>
-
-                        {/* Montant total */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Montant et devise */}
                         <div className="text-center">
                           <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
                             <CreditCard className="w-6 h-6 text-green-600" />
                           </div>
-                          <h4 className="font-semibold text-gray-900 dark:text-white mb-1">Montant total</h4>
+                          <h4 className="font-semibold text-gray-900 dark:text-white mb-1">Montant à payer</h4>
                           <p className="text-lg font-bold text-green-600 dark:text-green-400">
-                            {formatPrice(pendingExpeditionData.montant)}
+                            {formatPrice(pendingExpeditionData?.montant || 0)}
+                          </p>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            Devise: {paymentResponse.currency}
+                          </p>
+                        </div>
+
+                        {/* Pays et opérateurs */}
+                        <div className="text-center">
+                          <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <MapPin className="w-6 h-6 text-blue-600" />
+                          </div>
+                          <h4 className="font-semibold text-gray-900 dark:text-white mb-1">Pays</h4>
+                          <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                            {paymentResponse.country}
+                          </p>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            Opérateurs: {paymentResponse.available_operator?.join(', ')}
                           </p>
                         </div>
                       </div>
                     </Card>
 
-                    {/* Détails de l'expédition */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      {/* Informations expéditeur/destinataire */}
-                      <Card className="p-6">
+                    {/* Instructions de paiement */}
+                    <Card className="p-6 bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-700">
                         <h3 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                          <Users className="w-5 h-5 mr-2 text-ksl-red" />
-                          Informations de livraison
+                        <AlertTriangle className="w-5 h-5 mr-2 text-yellow-600" />
+                        Instructions de paiement
                         </h3>
                         
                         <div className="space-y-4">
-                          {/* Expéditeur */}
-                          <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                            <div className="flex items-center mb-2">
-                              <User className="w-4 h-4 text-blue-600 mr-2" />
-                              <span className="font-medium text-blue-900 dark:text-blue-100">Expéditeur</span>
+                        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-yellow-200 dark:border-yellow-600">
+                          <div className="flex items-start space-x-3">
+                            <div className="w-6 h-6 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                              <span className="text-yellow-600 text-sm font-bold">1</span>
                             </div>
-                            <div className="text-sm text-blue-800 dark:text-blue-200">
-                              <p className="font-medium">{pendingExpeditionData.adresse_expediteur.customer_first_name} {pendingExpeditionData.adresse_expediteur.customer_last_name}</p>
-                              <p className="text-xs mt-1">{pendingExpeditionData.adresse_expediteur.address}</p>
-                              <p className="text-xs">{pendingExpeditionData.adresse_expediteur.customer_phone_number}</p>
+                            <div>
+                              <p className="font-medium text-gray-900 dark:text-white mb-1">
+                                Finalisez votre paiement
+                              </p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400">
+                                Vous avez été redirigé vers la page de paiement sécurisée. Veuillez compléter votre transaction.
+                              </p>
+                            </div>
                             </div>
                           </div>
 
-                          {/* Destinataire */}
-                          <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
-                            <div className="flex items-center mb-2">
-                              <MapPin className="w-4 h-4 text-green-600 mr-2" />
-                              <span className="font-medium text-green-900 dark:text-green-100">Destinataire</span>
+                        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-yellow-200 dark:border-yellow-600">
+                          <div className="flex items-start space-x-3">
+                            <div className="w-6 h-6 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                              <span className="text-yellow-600 text-sm font-bold">2</span>
                             </div>
-                            <div className="text-sm text-green-800 dark:text-green-200">
-                              <p className="font-medium">{pendingExpeditionData.adresse_destinataire.pickup_company_name}</p>
-                              <p className="text-xs mt-1">{pendingExpeditionData.adresse_destinataire.address}</p>
-                              <p className="text-xs">{pendingExpeditionData.adresse_destinataire.pickup_phone_number}</p>
+                            <div>
+                              <p className="font-medium text-gray-900 dark:text-white mb-1">
+                                Attendez la confirmation
+                              </p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400">
+                                Une fois le paiement effectué, vous recevrez une confirmation et pourrez continuer.
+                              </p>
+                            </div>
                             </div>
                           </div>
 
-                          {/* Mode d'expédition */}
-                          <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
-                            <div className="flex items-center mb-2">
-                              <Truck className="w-4 h-4 text-purple-600 mr-2" />
-                              <span className="font-medium text-purple-900 dark:text-purple-100">Mode d'expédition</span>
+                        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-yellow-200 dark:border-yellow-600">
+                          <div className="flex items-start space-x-3">
+                            <div className="w-6 h-6 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                              <span className="text-yellow-600 text-sm font-bold">3</span>
                             </div>
-                            <div className="text-sm text-purple-800 dark:text-purple-200">
-                              <p className="font-medium">
-                                {pendingExpeditionData.mode_expedition === 'relay_point' ? '🏪 Dépôt en point relais' : '🚚 Livraison à domicile'}
+                            <div>
+                              <p className="font-medium text-gray-900 dark:text-white mb-1">
+                                Création de l'expédition
                               </p>
-                              <p className="text-xs mt-1">
-                                {pendingExpeditionData.mode_expedition === 'relay_point' ? 'Le destinataire récupérera le colis au point relais' : 'Livraison directe à l\'adresse du destinataire'}
+                              <p className="text-sm text-gray-600 dark:text-gray-400">
+                                Après confirmation du paiement, votre expédition sera automatiquement créée.
                               </p>
+                            </div>
                             </div>
                           </div>
                         </div>
                       </Card>
 
-                      {/* Détails du colis et paiement */}
-                      <Card className="p-6">
-                        <h3 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                          <Package className="w-5 h-5 mr-2 text-ksl-red" />
-                          Détails du colis
-                        </h3>
-                        
-                        <div className="space-y-4">
-                          {/* Articles */}
+                    {/* 🔄 Indicateur de vérification automatique */}
+                    {paymentCheckIntervalRef.current && (
+                      <Card className="p-6 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700">
+                        <div className="flex items-center space-x-3">
+                          <Loader className="w-6 h-6 text-blue-600 animate-spin" />
                           <div>
-                            <h4 className="font-medium text-gray-900 dark:text-white mb-3">
-                              Articles ({pendingExpeditionData.infocolis?.length || 0})
+                            <h4 className="font-semibold text-blue-900 dark:text-blue-100">
+                              Vérification automatique en cours
                             </h4>
-                            <div className="space-y-2">
-                              {pendingExpeditionData.infocolis?.map((item, index) => (
-                                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                                  <div className="flex items-center space-x-3">
-                                    <div className="w-8 h-8 bg-ksl-red/10 rounded-full flex items-center justify-center">
-                                      <Package className="w-4 h-4 text-ksl-red" />
-                                    </div>
-                                    <div>
-                                      <p className="font-medium text-gray-900 dark:text-white">{item.name}</p>
-                                      <p className="text-xs text-gray-500 dark:text-gray-400">{item.category}</p>
-                                    </div>
-                                  </div>
-                                  <div className="text-right">
-                                    <p className="font-medium text-gray-900 dark:text-white">{item.quantity}x</p>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">{item.weight} kg</p>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* Informations de paiement */}
-                          <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-                            <h4 className="font-medium text-gray-900 dark:text-white mb-3">Paiement</h4>
-                            <div className="space-y-2 text-sm">
-                              <div className="flex justify-between">
-                                <span className="text-gray-600 dark:text-gray-400">Méthode:</span>
-                                <span className="font-medium text-gray-900 dark:text-white">
-                                  {selectedPaymentMethod?.nomMethode || 'Non défini'}
-                                </span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-600 dark:text-gray-400">Statut:</span>
-                                <Badge variant="success">Payé</Badge>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-600 dark:text-gray-400">Montant:</span>
-                                <span className="font-bold text-ksl-red">
-                                  {formatPrice(pendingExpeditionData.montant)}
-                                </span>
-                              </div>
-                            </div>
+                            <p className="text-sm text-blue-700 dark:text-blue-300">
+                              Vérification du statut de paiement toutes les 5 secondes...
+                            </p>
                           </div>
                         </div>
                       </Card>
-                    </div>
+                    )}
+
+                    {/* Actions */}
+                      <Card className="p-6">
+                        <h3 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                        <RefreshCw className="w-5 h-5 mr-2 text-ksl-red" />
+                        Actions disponibles
+                        </h3>
+                        
+                        <div className="space-y-4">
+                        <div className="flex space-x-3">
+                          <Button 
+                            onClick={() => {
+                              if (paymentResponse?.payment_url) {
+                                window.open(paymentResponse.payment_url, '_blank');
+                              }
+                            }}
+                            className="flex-1"
+                            variant="outline"
+                          >
+                            <ExternalLink className="w-4 h-4 mr-2" />
+                            Rouvrir la page de paiement
+                          </Button>
+                          
+                          <Button 
+                            onClick={() => setCurrentStep(4)}
+                            className="flex-1"
+                            variant="outline"
+                          >
+                            <ArrowLeft className="w-4 h-4 mr-2" />
+                            Retour au paiement
+                          </Button>
+                          </div>
+                        </div>
+                      </Card>
 
                     {/* Instructions importantes */}
                     <Card className="p-6 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700">
@@ -3565,7 +4502,7 @@ Votre colis sera traité dans les plus brefs délais !
                   disabled={!validateStep(currentStep) || isCalculatingQuote}
                   isLoading={isCalculatingQuote}
                 >
-                  {!quoteData ? 'Calculer le devis' : 'Accepter le devis'}
+                  {!quoteData ? 'Accepter le prix' : 'Accepter le prix'}
                 </Button>
               ) : currentStep === 4 ? (
                 // Pas de bouton "Suivant" pour l'étape 4, utiliser le bouton de validation du paiement dans la section
@@ -3661,963 +4598,44 @@ Votre colis sera traité dans les plus brefs délais !
             🧮 Devis de livraison Kartian - Calcul détaillé
           </h3>
           
-          {/* NOUVEAU : Section de confirmation du tariffService */}
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 p-4 rounded-lg mb-6 border-l-4 border-blue-500">
-            <div className="flex items-center space-x-2 mb-3">
-              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                <CheckCircle className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h4 className="font-semibold text-blue-900 dark:text-blue-200">
-                  ✅ TariffService appliqué avec succès
-                </h4>
-                <p className="text-sm text-blue-700 dark:text-blue-300">
-                  Calcul effectué via le service de tarification Kartian
-                </p>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="font-medium">🔧 Service utilisé:</span>
-                  <span className="text-blue-600 font-mono">tariffService.calculateTariff()</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-medium">📊 Grille tarifaire:</span>
-                  <span className="text-blue-600">{quoteData?.details?.tariffGrid || 'Grille par défaut'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-medium">🚚 Transporteur:</span>
-                  <span className="text-blue-600">{quoteData?.selected_carrier?.nom || 'FastGo Express'}</span>
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="font-medium">💰 Prix final:</span>
-                  <span className="text-green-600 font-bold text-lg">{formatPrice(quoteData?.total_price || 0)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-medium">📅 Calculé le:</span>
-                  <span className="text-blue-600">{quoteData?.calculated_at ? new Date(quoteData.calculated_at).toLocaleString('fr-FR') : 'Maintenant'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="font-medium">🆔 ID Devis:</span>
-                  <span className="text-blue-600 font-mono text-xs">{quoteData?.quote_id || 'KSL-' + Date.now()}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          
+          {/* PRIX FINAL UNIQUEMENT */}
           {quoteData && (
             <div className="space-y-6">
-              {/* Résumé principal */}
-              <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
-                <div className="flex items-center space-x-2 mb-3">
-                  <CheckCircle className="w-5 h-5 text-green-600" />
-                  <span className="font-medium text-green-800 dark:text-green-200">
-                    {quoteData.message || 'Devis calculé avec succès'}
-                  </span>
+              <div className="text-center py-8">
+                <div className="mb-6">
+                  <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+                    💰 Prix de livraison
+                  </h2>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    Devis calculé par le TariffService Kartian
+                  </p>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span>ID Devis:</span>
-                      <span className="font-mono text-xs">{quoteData.quote_id || 'KSL-' + Date.now()}</span>
+                <div className="bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-900/20 dark:to-blue-900/20 p-8 rounded-2xl border-2 border-green-200 dark:border-green-700">
+                  <div className="text-6xl font-bold text-green-600 dark:text-green-400 mb-4">
+                    {formatPrice(quoteData?.total_price || 0)}
                   </div>
-                  
-                    {quoteData?.shipment_details && (
-                      <>
-                  <div className="flex justify-between">
-                          <span>🗺️ Zone origine:</span>
-                          <span className="capitalize">{quoteData?.shipment_details?.originZone || getCityZone(expeditionData.from_address?.split(',')[0]?.trim())?.id || 'N/A'} ({quoteData?.shipment_details?.originCity || expeditionData.from_address?.split(',')[0]?.trim() || 'N/A'})</span>
+                  <div className="text-xl text-gray-700 dark:text-gray-300 mb-2">
+                    {quoteData?.currency || 'FCFA'}
                   </div>
-                  
-                  <div className="flex justify-between">
-                          <span>🎯 Zone destination:</span>
-                          <span className="capitalize">{quoteData?.shipment_details?.destinationZone || getCityZone(expeditionData.to_address?.split(',')[0]?.trim())?.id || 'N/A'} ({quoteData?.shipment_details?.destinationCity || expeditionData.to_address?.split(',')[0]?.trim() || 'N/A'})</span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  
-                  <div className="space-y-2">
-                    {quoteData?.shipment_details && (
-                      <>
-                        <div className="flex justify-between">
-                          <span>⚖️ Poids total:</span>
-                          <span>{quoteData?.shipment_details?.totalWeight || 0} kg</span>
-                  </div>
-                        
-                        <div className="flex justify-between">
-                          <span>📦 Volume total:</span>
-                          <span>{Math.round(quoteData?.shipment_details?.totalVolumeCm3 || 0).toLocaleString()} cm³</span>
-                          {/* <span>{(quoteData.shipment_details.totalVolumeCm3 * 1000000).toFixed(0)} cm³</span> */}
-                </div>
-                        
-                        <div className="flex justify-between">
-                          <span>🚚 Type de service:</span>
-                          <span className="capitalize">{quoteData?.shipment_details?.serviceType || 'Standard'}</span>
-              </div>
-                        
-                        <div className="flex justify-between">
-                          <span>🕐 Délai de livraison:</span>
-                          <span>{quoteData?.shipment_details?.delais_livraison || '24h à 48h'}</span>
-                        </div>
-                        
-                        <div className="flex justify-between">
-                          <span>🕐 Livraison estimée:</span>
-                          <span>{quoteData?.estimated_delivery?.deliveryWindow || 'N/A'}</span>
-                        </div>
-                      </>
-                    )}
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Prix minimum garanti : 500 FCFA
                   </div>
                 </div>
-              </div>
-
-              {/* NOUVEAU : Données envoyées au tariffService */}
-              <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg mb-4">
-                <h4 className="font-medium text-green-900 dark:text-green-200 mb-3 flex items-center">
-                  <Send className="w-4 h-4 mr-2" />
-                  Données envoyées au TariffService
-                </h4>
                 
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span>🏙️ Ville origine:</span>
-                      <span className="font-mono">{quoteData?.shipment_details?.originCity || expeditionData.from_address?.split(',')[0] || 'Abidjan'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>🗺️ Zone origine:</span>
-                      <span className="font-mono capitalize">{quoteData?.shipment_details?.originZone || getCityZone(expeditionData.from_address?.split(',')[0]?.trim())?.id || 'N/A'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>🎯 Ville destination:</span>
-                      <span className="font-mono">{quoteData?.shipment_details?.destinationCity || expeditionData.to_address?.split(',')[0] || 'Abidjan'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>🎯 Zone destination:</span>
-                      <span className="font-mono capitalize">{quoteData?.shipment_details?.destinationZone || getCityZone(expeditionData.to_address?.split(',')[0]?.trim())?.id || 'N/A'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>⚖️ Poids total:</span>
-                      <span>{quoteData?.shipment_details?.totalWeight || 0} kg</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>📦 Volume total:</span>
-                      <span>{Math.round(quoteData?.shipment_details?.totalVolumeCm3 || 0).toLocaleString()} cm³</span>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span>🚚 Type de service:</span>
-                      <span className="capitalize">{quoteData?.shipment_details?.serviceType || 'standard'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>🆔 Transporteur:</span>
-                      <span className="font-mono">{quoteData?.selected_carrier?.nom || 'FastGo Express'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>🛡️ Assurance:</span>
-                      <span>{quoteData?.shipment_details?.isInsured ? '✅ OUI' : '❌ NON'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>💰 Valeur déclarée:</span>
-                      <span>{formatPrice(quoteData?.shipment_details?.declaredValue || 0)}</span>
-                    </div>
+                <div className="mt-6 text-sm text-gray-600 dark:text-gray-400">
+                  <div className="flex justify-center items-center space-x-4">
+                    <span>🆔 {quoteData.quote_id || 'KSL-' + Date.now()}</span>
+                    <span>📅 {quoteData?.calculated_at ? new Date(quoteData.calculated_at).toLocaleString('fr-FR') : 'Maintenant'}</span>
                   </div>
                 </div>
               </div>
 
-              {/* NOUVEAU : Détail des articles expédiés */}
-              {expeditionData.pickup_items && expeditionData.pickup_items.length > 0 && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                  <h4 className="font-medium text-blue-900 dark:text-blue-200 mb-3 flex items-center">
-                    📦 Détail des articles expédiés
-                  </h4>
-                  
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-blue-200 dark:border-blue-700">
-                          <th className="text-left py-2">Article</th>
-                          <th className="text-right py-2">Qté</th>
-                          <th className="text-right py-2">Poids (kg)</th>
-                          <th className="text-right py-2">Dimensions (cm)</th>
-                          <th className="text-right py-2">Volume (cm³)</th>
-                          <th className="text-right py-2">Poids total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {expeditionData.pickup_items.map((item, index) => {
-                          const totalWeight = parseFloat(item.weight) * parseInt(item.quantity);
-                          const volume = (parseFloat(item.length) || 0) * (parseFloat(item.width) || 0) * (parseFloat(item.height) || 0);
-                          return (
-                            <tr key={index} className="border-b border-blue-100 dark:border-blue-800">
-                              <td className="py-2">{item.name}</td>
-                              <td className="text-right py-2">{item.quantity}</td>
-                              <td className="text-right py-2">{item.weight} kg</td>
-                              <td className="text-right py-2">{item.length}×{item.width}×{item.height}</td>
-                              <td className="text-right py-2">{volume.toLocaleString()}</td>
-                              <td className="text-right py-2 font-medium">{totalWeight} kg</td>
-                            </tr>
-                          );
-                        })}
-                        <tr className="border-t-2 border-blue-300 dark:border-blue-600 font-bold">
-                          <td className="py-2" colSpan="5">TOTAUX</td>
-                          <td className="text-right py-2">
-                            {expeditionData.pickup_items.reduce((sum, item) => 
-                              sum + (parseFloat(item.weight) * parseInt(item.quantity)), 0
-                            )} kg
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
+              {/* Toutes les sections détaillées sont masquées */}
 
-              {/* NOUVEAU : Détail complet des calculs étape par étape */}
-              {quoteData.pricing_breakdown && (
-                <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-                  <h4 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center">
-                    <Calculator className="w-4 h-4 mr-2" />
-                    Calcul tarifaire détaillé - Étape par étape
-                  </h4>
-                  
-                  {/* NOUVEAU : Résultats du tariffService */}
-                  <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg mb-4 border-l-4 border-yellow-500">
-                    <h5 className="font-medium text-yellow-800 dark:text-yellow-200 mb-3 flex items-center">
-                      <Database className="w-4 h-4 mr-2" />
-                      Résultats du TariffService
-                    </h5>
-                    
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span>🏁 Prix final (tariffService):</span>
-                          <span className="font-bold text-green-600">{formatPrice(quoteData?.total_price || 0)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>📊 Prix de base:</span>
-                          <span>{formatPrice(quoteData?.breakdown?.basePrice || 0)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>🗺️ Tarif zone:</span>
-                          <span>{formatPrice(quoteData?.breakdown?.zoneTariff || 0)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>🏙️ Tarif ville:</span>
-                          <span>{formatPrice(quoteData?.breakdown?.cityTariff || 0)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>🏘️ Tarif commune:</span>
-                          <span>{formatPrice(quoteData?.breakdown?.communeTariff || 0)}</span>
-                        </div>
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span>⚖️ Tarif poids:</span>
-                          <span>{formatPrice(quoteData?.breakdown?.weightTariff || 0)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>📦 Tarif volume:</span>
-                          <span>{formatPrice(quoteData?.breakdown?.volumeTariff || 0)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>📍 Tarif distance:</span>
-                          <span>{formatPrice(quoteData?.breakdown?.distanceTariff || 0)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>💰 Tarif total:</span>
-                          <span className="font-medium">{formatPrice(quoteData?.breakdown?.totalTariff || 0)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>🎯 Devise:</span>
-                          <span className="font-mono">{quoteData?.currency || 'FCFA'}</span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Facteurs appliqués */}
-                    {quoteData?.breakdown?.factors && (
-                      <div className="mt-4 p-3 bg-white dark:bg-gray-700 rounded border">
-                        <h6 className="font-medium text-gray-700 dark:text-gray-300 mb-2">🔧 Facteurs appliqués:</h6>
-                        <div className="grid grid-cols-3 gap-2 text-xs">
-                          <div className="flex justify-between">
-                            <span>Zone:</span>
-                            <span className="font-mono">{quoteData.breakdown.factors.zoneFactor || 1.0}×</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Assurance:</span>
-                            <span className="font-mono">{quoteData.breakdown.factors.insuranceFactor || 1.0}×</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Temps:</span>
-                            <span className="font-mono">{quoteData.breakdown.factors.timeFactor || 1.0}×</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Service:</span>
-                            <span className="font-mono">{quoteData.breakdown.factors.serviceFactor || 1.0}×</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Équipement:</span>
-                            <span className="font-mono">{quoteData.breakdown.factors.equipmentFactor || 1.0}×</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Point relais:</span>
-                            <span className="font-mono">+{formatPrice(quoteData.breakdown.factors.relayPointFee || 0)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
+              {/* Toutes les sections de calculs détaillés sont masquées */}
 
-                    {/* NOUVELLE SECTION : Détails du calcul tarifaire */}
-                    <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900 dark:to-indigo-900 rounded border border-blue-200 dark:border-blue-700">
-                      <h6 className="font-bold text-blue-800 dark:text-blue-200 mb-3">🧮 Détails du calcul tarifaire</h6>
-                      
-                      {/* Données d'entrée */}
-                      <div className="mb-4">
-                        <h7 className="font-semibold text-blue-700 dark:text-blue-300 text-sm">📋 Données d'entrée:</h7>
-                        <div className="grid grid-cols-2 gap-2 text-xs mt-2">
-                          <div className="flex justify-between">
-                            <span>Poids:</span>
-                            <span className="font-mono">{quoteData.shipment_details?.totalWeight || 0} kg</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Volume:</span>
-                            <span className="font-mono">{Math.round((quoteData.shipment_details?.totalVolumeCm3 || 0) / 1000 * 100) / 100} L</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Distance:</span>
-                            <span className="font-mono">{quoteData.shipment_details?.distance || 0} km</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Ville origine:</span>
-                            <span className="font-mono capitalize">{quoteData.shipment_details?.originCity || 'N/A'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Ville destination:</span>
-                            <span className="font-mono capitalize">{quoteData.shipment_details?.destinationCity || 'N/A'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Zone origine:</span>
-                            <span className="font-mono capitalize">{quoteData.shipment_details?.originZone || 'N/A'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Zone destination:</span>
-                            <span className="font-mono capitalize">{quoteData.shipment_details?.destinationZone || 'N/A'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Transporteur:</span>
-                            <span className="font-mono">{quoteData.selected_carrier?.nom || 'N/A'}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Tarifs disponibles */}
-                      <div className="mb-4">
-                        <h7 className="font-semibold text-blue-700 dark:text-blue-300 text-sm">📊 Tarifs disponibles:</h7>
-                        <div className="grid grid-cols-3 gap-2 text-xs mt-2">
-                          <div className="flex justify-between">
-                            <span>TarifPoids:</span>
-                            <span className="font-mono">{quoteData.breakdown?.weightTariff > 0 ? '✓' : '✗'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>TarifVolum:</span>
-                            <span className="font-mono">{quoteData.breakdown?.volumeTariff > 0 ? '✓' : '✗'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>TarifDistance:</span>
-                            <span className="font-mono">{quoteData.breakdown?.distanceTariff > 0 ? '✓' : '✗'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>TarifCommune:</span>
-                            <span className="font-mono">{quoteData.breakdown?.communeTariff > 0 ? '✓' : '✗'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>TarifZone:</span>
-                            <span className="font-mono">{quoteData.breakdown?.zoneTariff > 0 ? '✓' : '✗'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>TarifVille:</span>
-                            <span className="font-mono">{quoteData.breakdown?.cityTariff > 0 ? '✓' : '✗'}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Calcul détaillé */}
-                      <div>
-                        <h7 className="font-semibold text-blue-700 dark:text-blue-300 text-sm">🧮 Calcul détaillé:</h7>
-                        <div className="space-y-1 text-xs mt-2 font-mono">
-                          <div className="flex justify-between">
-                            <span>Prix de base:</span>
-                            <span>{formatPrice(quoteData.breakdown?.basePrice || 0)}</span>
-                          </div>
-                          {quoteData.breakdown?.weightTariff > 0 && (
-                            <div className="flex justify-between text-green-600">
-                              <span>+ Tarif poids:</span>
-                              <span>+{formatPrice(quoteData.breakdown.weightTariff)}</span>
-                            </div>
-                          )}
-                          {quoteData.breakdown?.volumeTariff > 0 && (
-                            <div className="flex justify-between text-purple-600">
-                              <span>+ Tarif volume:</span>
-                              <span>+{formatPrice(quoteData.breakdown.volumeTariff)}</span>
-                            </div>
-                          )}
-                          {quoteData.breakdown?.distanceTariff > 0 && (
-                            <div className="flex justify-between text-orange-600">
-                              <span>+ Tarif distance:</span>
-                              <span>+{formatPrice(quoteData.breakdown.distanceTariff)}</span>
-                            </div>
-                          )}
-                          {quoteData.breakdown?.cityTariff > 0 && (
-                            <div className="flex justify-between text-blue-600">
-                              <span>+ Tarif ville:</span>
-                              <span>+{formatPrice(quoteData.breakdown.cityTariff)}</span>
-                            </div>
-                          )}
-                          {quoteData.breakdown?.communeTariff > 0 && (
-                            <div className="flex justify-between text-indigo-600">
-                              <span>+ Tarif commune:</span>
-                              <span>+{formatPrice(quoteData.breakdown.communeTariff)}</span>
-                            </div>
-                          )}
-                          {quoteData.breakdown?.zoneTariff > 0 && (
-                            <div className="flex justify-between text-yellow-600">
-                              <span>+ Tarif zone:</span>
-                              <span>+{formatPrice(quoteData.breakdown.zoneTariff)}</span>
-                            </div>
-                          )}
-                          <div className="flex justify-between border-t pt-1 font-bold">
-                            <span>= Total tarifs:</span>
-                            <span>{formatPrice(quoteData.breakdown?.totalTariff || 0)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    {/* Étape 1: Prix de base */}
-                    <div className="border-l-4 border-gray-400 pl-4">
-                      <h5 className="font-medium text-gray-700 dark:text-gray-300">📋 1. Prix de base</h5>
-                      <div className="flex justify-between text-sm mt-1">
-                        <span>Prix de base (tariffService):</span>
-                        <span className="font-medium">{formatPrice(quoteData.breakdown?.basePrice || 500)}</span>
-                      </div>
-                      <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                        Prix de base calculé par le service de tarification
-                      </p>
-                    </div>
-
-                    {/* Étape 2: Tarifs détaillés */}
-                    {quoteData.breakdown?.totalTariff > 0 && (
-                      <div className="border-l-4 border-blue-400 pl-4">
-                        <h5 className="font-medium text-blue-700 dark:text-blue-300">🗺️ 2. Tarifs détaillés (tariffService)</h5>
-                        <div className="space-y-1 text-sm">
-                          {quoteData.breakdown?.weightTariff > 0 && (
-                            <div className="flex justify-between">
-                              <span>Tarif poids:</span>
-                              <span className="font-medium">{formatPrice(quoteData.breakdown.weightTariff)}</span>
-                            </div>
-                          )}
-                          {quoteData.breakdown?.volumeTariff > 0 && (
-                            <div className="flex justify-between">
-                              <span>Tarif volume:</span>
-                              <span className="font-medium">{formatPrice(quoteData.breakdown.volumeTariff)}</span>
-                            </div>
-                          )}
-                          {quoteData.breakdown?.distanceTariff > 0 && (
-                            <div className="flex justify-between">
-                              <span>Tarif distance:</span>
-                              <span className="font-medium">{formatPrice(quoteData.breakdown.distanceTariff)}</span>
-                            </div>
-                          )}
-                          {quoteData.breakdown?.zoneTariff > 0 && (
-                            <div className="flex justify-between">
-                              <span>Tarif zone:</span>
-                              <span className="font-medium">{formatPrice(quoteData.breakdown.zoneTariff)}</span>
-                            </div>
-                          )}
-                          {quoteData.breakdown?.cityTariff > 0 && (
-                            <div className="flex justify-between">
-                              <span>Tarif ville:</span>
-                              <span className="font-medium">{formatPrice(quoteData.breakdown.cityTariff)}</span>
-                            </div>
-                          )}
-                          {quoteData.breakdown?.communeTariff > 0 && (
-                            <div className="flex justify-between">
-                              <span>Tarif commune:</span>
-                              <span className="font-medium">{formatPrice(quoteData.breakdown.communeTariff)}</span>
-                            </div>
-                          )}
-                          <div className="flex justify-between font-medium border-t pt-1">
-                            <span>Total tarifs:</span>
-                            <span className="text-blue-600">{formatPrice(quoteData.breakdown.totalTariff)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Étape 3: Facteurs appliqués */}
-                    {quoteData.breakdown?.factors && (
-                      <div className="border-l-4 border-green-400 pl-4">
-                        <h5 className="font-medium text-green-700 dark:text-green-300">🔧 3. Facteurs appliqués</h5>
-                        <div className="space-y-1 text-sm">
-                          {quoteData.breakdown.factors.zoneFactor && (
-                            <div className="flex justify-between">
-                              <span>Facteur zone:</span>
-                              <span className="font-medium">×{quoteData.breakdown.factors.zoneFactor.toFixed(2)}</span>
-                            </div>
-                          )}
-                          {quoteData.breakdown.factors.serviceFactor && (
-                            <div className="flex justify-between">
-                              <span>Facteur service:</span>
-                              <span className="font-medium">×{quoteData.breakdown.factors.serviceFactor.toFixed(2)}</span>
-                            </div>
-                          )}
-                          {quoteData.breakdown.factors.insuranceFactor && (
-                            <div className="flex justify-between">
-                              <span>Facteur assurance:</span>
-                              <span className="font-medium">×{quoteData.breakdown.factors.insuranceFactor.toFixed(2)}</span>
-                            </div>
-                          )}
-                          {quoteData.breakdown.factors.equipmentFactor && (
-                            <div className="flex justify-between">
-                              <span>Facteur équipement:</span>
-                              <span className="font-medium">×{quoteData.breakdown.factors.equipmentFactor.toFixed(2)}</span>
-                            </div>
-                          )}
-                          {quoteData.breakdown.factors.relayPointFee && (
-                            <div className="flex justify-between">
-                              <span>Frais point relais:</span>
-                              <span className="font-medium">{formatPrice(quoteData.breakdown.factors.relayPointFee)}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Étape 3: Supplément poids (NOUVEAU SYSTÈME) */}
-                    <div className="border-l-4 border-orange-400 pl-4 hidden">
-                      <h5 className="font-medium text-orange-700 dark:text-orange-300">⚖️ 3. Supplément poids (nouveau barème)</h5>
-                      <div className="space-y-1 text-sm">
-                        <div className="flex justify-between">
-                          <span>Poids total colis:</span>
-                          <span className="font-medium">{quoteData.shipment_details?.totalWeight || 0} kg</span>
-                        </div>
-                        
-                        {/* Affichage détaillé selon le nouveau barème */}
-                        {(quoteData.shipment_details?.totalWeight || 0) <= 4 ? (
-                          <>
-                            <div className="flex justify-between">
-                              <span>Tranche 1-4kg:</span>
-                              <span>{quoteData.shipment_details?.totalWeight || 0} kg × 50 FCFA/kg</span>
-                            </div>
-                            <div className="flex justify-between font-medium border-t pt-1">
-                              <span>Supplément poids:</span>
-                              <span className="text-orange-600">+{formatPrice((quoteData.shipment_details?.totalWeight || 0) * 50)}</span>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="flex justify-between">
-                              <span>Tranche 1-4kg:</span>
-                              <span>4 kg × 50 FCFA/kg = {formatPrice(4 * 50)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Tranche 5kg+:</span>
-                              <span>{((quoteData.shipment_details?.totalWeight || 0) - 4)} kg × 30 FCFA/kg = {formatPrice(((quoteData.shipment_details?.totalWeight || 0) - 4) * 30)}</span>
-                            </div>
-                            <div className="flex justify-between font-medium border-t pt-1">
-                              <span>Supplément poids total:</span>
-                              <span className="text-orange-600">+{formatPrice((4 * 50) + (((quoteData.shipment_details?.totalWeight || 0) - 4) * 30))}</span>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                      <p className="text-xs text-orange-600 dark:text-orange-400 mt-1 bg-orange-50 dark:bg-orange-900/20 p-2 rounded">
-                        <strong>NOUVEAU BARÈME 2024:</strong><br />
-                        • 1-4kg : 50 FCFA/kg<br />
-                        • 5kg et plus : 30 FCFA/kg
-                      </p>
-                    </div>
-
-                    {/* Étape 4: Supplément volume (NOUVEAU SYSTÈME) */}
-                    <div className="border-l-4 border-purple-400 pl-4 hidden">
-                      <h5 className="font-medium text-purple-700 dark:text-purple-300">📦 4. Supplément volume (nouveau système)</h5>
-                      <div className="space-y-1 text-sm">
-                        <div className="flex justify-between">
-                          <span>Volume total:</span>
-                          <span className="font-medium">{Math.round(quoteData.shipment_details?.totalVolumeCm3 || 0).toLocaleString(3)} cm³</span>
-                        </div>
-                        
-                        {/* Nouveau système : premier cm³ à 25 FCFA, reste à 0,1 FCFA/cm³ */}
-                        {(quoteData.details?.volume || 0) <= 1 ? (
-                          <>
-                            <div className="flex justify-between">
-                              <span>Volume ≤ 1 cm³:</span>
-                              <span>{Math.round(quoteData.shipment_details?.totalVolumeCm3 || 0).toLocaleString(3)} cm³ × 25 FCFA/cm³</span>
-                            </div>
-                            <div className="flex justify-between font-medium border-t pt-1">
-                              <span>Supplément volume:</span>
-                              <span className="text-purple-600">+{formatPrice(Math.round((quoteData.shipment_details?.totalVolumeCm3 || 0) * 0.1))}</span>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="flex justify-between">
-                              <span>Premier cm³:</span>
-                              <span>1 cm³ × 25 FCFA = {formatPrice(25)}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Volume supplémentaire:</span>
-                              <span>{Math.round((quoteData.details?.volume || 0) - 1).toLocaleString()} cm³ × 0,1 FCFA/cm³ = {formatPrice(Math.round(((quoteData.details?.volume || 0) - 1) * 0.1))}</span>
-                            </div>
-                            <div className="flex justify-between font-medium border-t pt-1">
-                              <span>Total supplément volume:</span>
-                              <span className="text-purple-600">+{formatPrice(25 + Math.round(((quoteData.details?.volume || 0) - 1) * 0.1))}</span>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                      <p className="text-xs text-purple-600 dark:text-purple-400 mt-1 bg-purple-50 dark:bg-purple-900/20 p-2 rounded">
-                        <strong>🆕 NOUVEAU SYSTÈME 2024:</strong><br />
-                        • Premier cm³ : 25 FCFA<br />
-                        • Volume supplémentaire : 0,1 FCFA/cm³
-                      </p>
-                    </div>
-
-                    {/* Étape 5: Supplément distance (NOUVEAU) */}
-                    {quoteData.details?.distance > 0 && (
-                      <div className="border-l-4 border-blue-400 pl-4">
-                        <h5 className="font-medium text-blue-700 dark:text-blue-300">📍 5. Supplément distance (nouveau)</h5>
-                        <div className="space-y-1 text-sm">
-                          <div className="flex justify-between">
-                            <span>Distance totale:</span>
-                            <span className="font-medium">{quoteData.details?.distance} km</span>
-                          </div>
-                          
-                          {quoteData.details?.distance <= 10 ? (
-                            <>
-                              <div className="flex justify-between">
-                                <span>Tranche 0-10km:</span>
-                                <span>{quoteData.details?.distance} km × 50 FCFA/km</span>
-                              </div>
-                              <div className="flex justify-between font-medium border-t pt-1">
-                                <span>Supplément distance:</span>
-                                <span className="text-blue-600">+{formatPrice(quoteData.details?.distance * 50)}</span>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <div className="flex justify-between">
-                                <span>Tranche 0-10km:</span>
-                                <span>10 km × 50 FCFA/km = {formatPrice(500)}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span>Tranche &gt;10km:</span>
-                                <span>{(quoteData.details?.distance - 10)} km × 10 FCFA/km = {formatPrice((quoteData.details?.distance - 10) * 10)}</span>
-                              </div>
-                              <div className="flex justify-between font-medium border-t pt-1">
-                                <span>Total supplément distance:</span>
-                                <span className="text-blue-600">+{formatPrice(500 + ((quoteData.details?.distance - 10) * 10))}</span>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
-                          <strong>🆕 TARIFICATION DISTANCE:</strong><br />
-                          • 0-10km : 50 FCFA/km<br />
-                          • &gt;10km : 10 FCFA/km
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Étape 6: Assurance */}
-                    {(expeditionData.isInsured || quoteData.pricing_breakdown.insurance_fee > 0) && (
-                      <div className="border-l-4 border-green-400 pl-4">
-                        <h5 className="font-medium text-green-700 dark:text-green-300">🛡️ 3. Assurance colis</h5>
-                        <div className="space-y-1 text-sm">
-                          <div className="flex justify-between">
-                            <span>Assurance demandée:</span>
-                            <span className={expeditionData.isInsured ? "text-green-600 font-medium" : "text-gray-500"}>
-                              {expeditionData.isInsured ? "✅ OUI" : "❌ NON"}
-                            </span>
-                          </div>
-                          {expeditionData.isInsured && expeditionData.declared_value && (
-                            <>
-                              <div className="flex justify-between">
-                                <span>Valeur déclarée:</span>
-                                <span className="font-medium">{formatPrice(parseFloat(expeditionData.declared_value) || 0)}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span>Taux d'assurance:</span>
-                                <span>2% de la valeur déclarée</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span>Calcul assurance:</span>
-                                <span className="text-xs">{formatPrice(parseFloat(expeditionData.declared_value) * 0.02)} FCFA</span>
-                              </div>
-                              <div className="flex justify-between font-medium border-t pt-1">
-                                <span>Frais d'assurance:</span>
-                                <span className="text-green-600">+{formatPrice(quoteData.pricing_breakdown?.insurance_fee || 0)}</span>
-                              </div>
-                            </>
-                          )}
-                          {!expeditionData.isInsured && (
-                            <div className="text-xs text-gray-500 italic">
-                              💡 Vous avez choisi de ne pas assurer votre colis. En cas de perte ou de dommage, aucune indemnisation ne sera possible.
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-xs text-green-600 dark:text-green-400 mt-2 bg-green-50 dark:bg-green-900/20 p-2 rounded">
-                          {expeditionData.isInsured ? (
-                            <>
-                              <p className="font-medium">✅ Votre colis est assuré !</p>
-                              <p>Formule: max({formatPrice((parseFloat(expeditionData.declared_value) || 0) * 0.02)}, 0 FCFA)</p>
-                              <p>• Couverture: perte totale ou dommages</p>
-                              <p>• Remboursement: jusqu'à {formatPrice(parseFloat(expeditionData.declared_value) || 0)}</p>
-                            </>
-                          ) : (
-                            <>
-                              <p className="font-medium">⚠️ Votre colis n'est pas assuré</p>
-                              <p>En cas de problème, aucune indemnisation ne sera versée.</p>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Étape 7: Facteur de service */}
-                    {quoteData.pricing_breakdown.service_factor !== 1.0 && (
-                      <div className="border-l-4 border-cyan-400 pl-4">
-                        <h5 className="font-medium text-cyan-700 dark:text-cyan-300">🚚 4. Facteur de service</h5>
-                        <div className="space-y-1 text-sm">
-                          <div className="flex justify-between">
-                            <span>Type de service:</span>
-                            <span className="capitalize">{quoteData.shipment_details?.serviceType || 'standard'}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Facteur multiplicateur:</span>
-                            <span>{quoteData.pricing_breakdown.service_factor}x</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Sous-total avant facteur:</span>
-                            <span>{formatPrice((quoteData.total_price || 0) / quoteData.pricing_breakdown.service_factor)}</span>
-                          </div>
-                        </div>
-                        <p className="text-xs text-cyan-600 dark:text-cyan-400 mt-1">
-                          {quoteData.shipment_details?.serviceType === 'express' && 'Service express (+50% pour livraison rapide)'}
-                          {quoteData.shipment_details?.serviceType === 'economique' && 'Service économique (-20% pour livraison lente)'}
-                          {quoteData.shipment_details?.serviceType === 'regional' && 'Service régional (-10% pour couverture étendue)'}
-                          {quoteData.shipment_details?.serviceType === 'simplicite' && 'Service simplicité (+20% pour service basique)'}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Étape 8: Réductions et suppléments */}
-                    {(quoteData.pricing_breakdown.relay_point_discount < 0 || quoteData.pricing_breakdown.weekend_supplement > 0) && (
-                      <div className="border-l-4 border-yellow-400 pl-4">
-                        <h5 className="font-medium text-yellow-700 dark:text-yellow-300">🎯 8. Ajustements spéciaux</h5>
-                        <div className="space-y-1 text-sm">
-                          {quoteData.pricing_breakdown.relay_point_discount < 0 && (
-                            <div className="flex justify-between text-green-600 dark:text-green-400">
-                              <span>🏪 Réduction point relais:</span>
-                              <span>{formatPrice(quoteData.pricing_breakdown.relay_point_discount)}</span>
-                            </div>
-                          )}
-                          
-                          {quoteData.pricing_breakdown.weekend_supplement > 0 && (
-                            <div className="flex justify-between text-orange-600 dark:text-orange-400">
-                              <span>📅 Supplément weekend:</span>
-                              <span>+{formatPrice(quoteData.pricing_breakdown.weekend_supplement)}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Résultat final */}
-                    <div className="border-l-4 border-red-500 pl-4 bg-red-50 dark:bg-red-900/20 p-3 rounded-r-lg">
-                      <h5 className="font-bold text-red-700 dark:text-red-300">💰 PRIX FINAL</h5>
-                      <div className="flex justify-between items-center text-lg font-bold">
-                        <span>Total à payer:</span>
-                        <span className="text-red-600 dark:text-red-400">{formatPrice(quoteData.total_price || 5000)} {quoteData.currency || 'FCFA'}</span>
-                      </div>
-                      <p className="text-xs text-red-600 dark:text-red-400 mt-1">
-                        Prix minimum garanti: 500 FCFA
-                      </p>
-                    </div>
-                    
-                    {/* NOUVEAU : Confirmation de l'utilisation du tariffService */}
-                    <div className="border-l-4 border-green-500 pl-4 bg-green-50 dark:bg-green-900/20 p-3 rounded-r-lg">
-                      <h5 className="font-bold text-green-700 dark:text-green-300 mb-2">✅ CONFIRMATION TARIFFSERVICE</h5>
-                      <div className="text-sm space-y-1">
-                        <div className="flex justify-between">
-                          <span>🔧 Service utilisé:</span>
-                          <span className="font-mono text-green-600">tariffService.calculateTariff()</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>📊 Source des données:</span>
-                          <span className="text-green-600">API Grilles Tarifaires</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>🚚 Transporteur:</span>
-                          <span className="text-green-600">{quoteData?.selected_carrier?.nom || 'FastGo Express'}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>🆔 Grille tarifaire:</span>
-                          <span className="text-green-600">{quoteData?.details?.tariffGrid || 'Grille par défaut'}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>⏱️ Calculé le:</span>
-                          <span className="text-green-600">{quoteData?.calculated_at ? new Date(quoteData.calculated_at).toLocaleString('fr-FR') : 'Maintenant'}</span>
-                        </div>
-                      </div>
-                      <div className="mt-2 p-2 bg-white dark:bg-gray-700 rounded border">
-                        <p className="text-xs text-green-600 dark:text-green-400">
-                          <strong>✅ TARIFSERVICE CONFIRMÉ :</strong> Ce devis a été calculé en utilisant le service de tarification Kartian 
-                          avec les grilles tarifaires de l'API. Tous les calculs (poids, volume, distance, zones, facteurs) 
-                          sont appliqués selon la logique du tariffService.
-                        </p>
-                      </div>
-                    </div>
-                    
-                    {/* 🔍 SECTION DEBUG : Formule mathématique complète */}
-                    <div className="hidden border-l-4 border-ksl-red pl-4 bg-purple-50 dark:bg-purple-900/20 p-3 rounded-r-lg">
-                      <h5 className="font-bold text-purple-700 dark:text-purple-300 mb-2">🔍 Formule mathématique complète - Système Kartian 2024</h5>
-                      <div className="text-xs font-mono text-purple-600 dark:text-purple-400 space-y-1">
-                        <div className="bg-white dark:bg-gray-800 p-2 rounded border">
-                          <p><strong>🆕 NOUVEAU SYSTÈME DE CALCUL 2024</strong></p>
-                          <hr className="my-2" />
-                          
-                          <p><strong>Étape 1 :</strong> Prix de base = 500 FCFA (tarif uniforme Kartian)</p>
-                          
-                          <p><strong>Étape 2 :</strong> Majoration zone = 500 × {
-                            quoteData.details?.destinationZone === 'zone1' ? '1.05 (+5%)' :
-                            quoteData.details?.destinationZone === 'zone2' ? '1.10 (+10%)' :
-                            quoteData.details?.destinationZone === 'zone3' ? '1.15 (+15%)' :
-                            quoteData.details?.destinationZone === 'zone4' ? '1.20 (+20%)' : '1.25 (+25%)'
-                          } = {formatPrice(Math.round(500 * (
-                            quoteData.details?.destinationZone === 'zone1' ? 1.05 :
-                            quoteData.details?.destinationZone === 'zone2' ? 1.10 :
-                            quoteData.details?.destinationZone === 'zone3' ? 1.15 :
-                            quoteData.details?.destinationZone === 'zone4' ? 1.20 : 1.25
-                          )))} FCFA</p>
-                          
-                          <p><strong>Étape 3 :</strong> Poids = {
-                            (quoteData.details?.weight || 0) <= 4 
-                              ? `${quoteData.details?.weight || 0} kg × 50 FCFA/kg = ${formatPrice((quoteData.details?.weight || 0) * 50)} FCFA`
-                              : `(4 kg × 50) + (${((quoteData.details?.weight || 0) - 4).toFixed(1)} kg × 30) = ${formatPrice(200 + Math.round(((quoteData.details?.weight || 0) - 4) * 30))} FCFA`
-                          }</p>
-                          
-                          <p><strong>Étape 4 :</strong> Volume = {
-                            (quoteData.details?.volume || 0) <= 1
-                              ? `${(quoteData.details?.volume || 0).toFixed(3)} cm³ × 25 FCFA = ${formatPrice((quoteData.details?.volume || 0) * 25)} FCFA`
-                              : `(1 cm³ × 25) + (${Math.round((quoteData.details?.volume || 0) - 1).toLocaleString()} cm³ × 0,1) = ${formatPrice(25 + Math.round(((quoteData.details?.volume || 0) - 1) * 0.1))} FCFA`
-                          }</p>
-                          
-                          {quoteData.details?.distance > 0 && (
-                            <p><strong>Étape 5 :</strong> Distance = {
-                              quoteData.details?.distance <= 10
-                                ? `${quoteData.details?.distance} km × 50 FCFA/km = ${formatPrice(quoteData.details?.distance * 50)} FCFA`
-                                : `(10 km × 50) + (${quoteData.details?.distance - 10} km × 10) = ${formatPrice(500 + ((quoteData.details?.distance - 10) * 10))} FCFA`
-                            }</p>
-                          )}
-                          
-                          {expeditionData.isInsured && expeditionData.declared_value && (
-                            <p><strong>Étape 6 :</strong> Assurance = {formatPrice(parseFloat(expeditionData.declared_value))} × 2% = {formatPrice(Math.round((parseFloat(expeditionData.declared_value) || 0) * 0.02))} FCFA</p>
-                          )}
-                          
-                          {quoteData.details?.relayDiscount && (
-                            <p><strong>Réduction point relais :</strong> {formatPrice(quoteData.details?.relayDiscount)} FCFA (-5% dépôt + -5% retrait)</p>
-                          )}
-                          
-                          {quoteData.details?.holidaySupplement > 0 && (
-                            <p><strong>Supplément weekend/férié :</strong> +{formatPrice(quoteData.details?.holidaySupplement)} FCFA</p>
-                          )}
-                          
-                          <hr className="my-2" />
-                          <p className="font-bold text-purple-800 dark:text-purple-200 text-base">
-                            <strong>🎯 TOTAL FINAL KARTIAN :</strong> <span className="text-lg text-red-600">{formatPrice(quoteData.finalPrice)} FCFA</span>
-                          </p>
-                          
-                          <div className="mt-2 text-xs text-green-600 dark:text-green-400">
-                            <p>✅ Prix minimum garanti : 500 FCFA</p>
-                            <p>✅ Système de tarification 2024 appliqué</p>
-                            <p>✅ Calcul transparent et détaillé</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Informations sur la livraison */}
-              {quoteData.estimated_delivery && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                  <h4 className="font-medium text-blue-900 dark:text-blue-200 mb-2 flex items-center">
-                    <Clock className="w-4 h-4 mr-2" />
-                    Informations de livraison
-                  </h4>
-                  
-                  <div className="grid grid-cols-2 gap-4 text-sm text-blue-800 dark:text-blue-300">
-                    <div>
-                      <div className="flex justify-between">
-                        <span>Délai estimé:</span>
-                        <span className="font-medium">{quoteData.estimated_delivery.deliveryWindow}</span>
-                      </div>
-                      
-                      <div className="flex justify-between">
-                        <span>Date de livraison:</span>
-                        <span className="font-medium">{quoteData.estimated_delivery.estimatedDate}</span>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      {quoteData.shipment_details?.isRelayPoint && (
-                        <div className="flex items-center space-x-1">
-                          <Target className="w-4 h-4" />
-                          <span>🏪 Livraison en point relais</span>
-                        </div>
-                      )}
-                      
-                      {quoteData.shipment_details?.isInsured && (
-                        <div className="flex items-center space-x-1">
-                          <span>🛡️ Colis assuré pour {formatPrice(parseFloat(expeditionData.declared_value) || 0)}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <Alert variant="info">
-                <Info className="w-4 h-4" />
-                <p className="text-sm">
-                  Ce devis est valable pendant 15 minutes. 
-                  {quoteData.shipment_details?.serviceType === 'express' && 
-                    ' Service express sélectionné pour une livraison rapide.'
-                  }
-                  {quoteData.shipment_details?.serviceType === 'regional' && 
-                    ' Service régional sélectionné pour une couverture étendue.'
-                  }
-                  {quoteData.shipment_details?.serviceType === 'simplicite' && 
-                    ' Service simplicité sélectionné pour un service basique.'
-                  }
-                  <br />
-                  <strong>Calculé le:</strong> {new Date(quoteData.calculated_at).toLocaleString('fr-FR')}
-                </p>
-              </Alert>
+              {/* Toutes les sections d'informations sont masquées */}
 
               <div className="flex space-x-3">
                 <Button 
@@ -4633,7 +4651,7 @@ Votre colis sera traité dans les plus brefs délais !
                   className="flex-1 bg-ksl-red hover:bg-red-700"
                 >
                   <CheckCircle className="w-4 h-4 mr-2" />
-                  Accepter le devis
+                  Accepter le prix
                 </Button>
               </div>
             </div>
@@ -4645,10 +4663,7 @@ Votre colis sera traité dans les plus brefs délais !
       {/* 💳 NOUVEAU MODAL DE PAIEMENT */}
       <Modal isOpen={showPaymentModal} onClose={() => setShowPaymentModal(false)}>
         <div className="p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-            💳 Choisir le mode de paiement
-          </h3>
-          
+         
           {/* Résumé de la commande */}
           {pendingExpeditionData && (
             <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg mb-6">
@@ -4754,6 +4769,84 @@ Votre colis sera traité dans les plus brefs délais !
             )}
           </div>
 
+          {/* 📱 NOUVEAU : Champ numéro de paiement */}
+          <div className="space-y-3 mt-6">
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                📱 Numéro de téléphone pour le paiement
+              </label>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Saisissez le numéro de téléphone associé à votre compte de paiement mobile
+              </p>
+            </div>
+            
+            <div className="flex space-x-3">
+              <div className="w-24">
+                <select 
+                  value={paymentCountryCode}
+                  onChange={(e) => {
+                    setPaymentCountryCode(e.target.value);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-white focus:ring-2 focus:ring-ksl-red focus:border-transparent"
+                >
+                  <option value="+225">🇨🇮 +225</option>
+                  <option value="+237">🇨🇲 +237</option>
+                  <option value="+226">🇧🇫 +226</option>
+                  <option value="+224">🇬🇳 +224</option>
+                  <option value="+241">🇬🇦 +241</option>
+                  <option value="+223">🇲🇱 +223</option>
+                  <option value="+221">🇸🇳 +221</option>
+                  <option value="+229">🇧🇯 +229</option>
+                </select>
+              </div>
+              
+              <div className="flex-1">
+                <Input
+                  type="tel"
+                  placeholder="Numéro de téléphone"
+                  value={paymentPhoneNumber}
+                  onChange={(e) => {
+                    setPaymentPhoneNumber(e.target.value);
+                  }}
+                  className="w-full"
+                  required
+                />
+              </div>
+            </div>
+            
+            {paymentPhoneNumber && (
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                Numéro complet : <span className="font-medium text-ksl-red">{paymentCountryCode}{paymentPhoneNumber}</span>
+              </div>
+            )}
+          </div>
+
+          {/* 🚀 Indicateur de statut du paiement */}
+          {paymentStep !== 'idle' && (
+            <div className="mt-4 p-4 rounded-lg border">
+              {paymentStep === 'initializing' && (
+                <div className="flex items-center space-x-3 text-blue-600 dark:text-blue-400">
+                  <Loader className="w-5 h-5 animate-spin" />
+                  <span className="font-medium">Initialisation du paiement en cours...</span>
+                </div>
+              )}
+              
+              {paymentStep === 'success' && (
+                <div className="flex items-center space-x-3 text-green-600 dark:text-green-400">
+                  <CheckCircle className="w-5 h-5" />
+                  <span className="font-medium">Paiement initialisé avec succès !</span>
+                </div>
+              )}
+              
+              {paymentStep === 'error' && (
+                <div className="flex items-center space-x-3 text-red-600 dark:text-red-400">
+                  <AlertCircle className="w-5 h-5" />
+                  <span className="font-medium">Erreur lors de l'initialisation du paiement</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Boutons d'action */}
           <div className="flex space-x-3 mt-6">
             <Button 
@@ -4768,11 +4861,11 @@ Votre colis sera traité dans les plus brefs délais !
             <Button 
               onClick={handlePaymentValidation}
               className="flex-1"
-              disabled={!selectedPaymentMethod || isProcessingPayment}
+              disabled={!selectedPaymentMethod || !paymentPhoneNumber || isProcessingPayment}
               isLoading={isProcessingPayment}
             >
               <CreditCard className="w-4 h-4 mr-2" />
-              {isProcessingPayment ? 'Traitement...' : 'Valider le paiement'}
+              {isProcessingPayment ? 'Initialisation du paiement...' : 'Initialiser le paiement'}
             </Button>
           </div>
         </div>
@@ -4852,6 +4945,32 @@ Votre colis sera traité dans les plus brefs délais !
           />
         </Modal>
       )}
+
+      {/* 🔄 NOUVEAU : Composant de redirection après paiement */}
+      <PaymentRedirect
+        isOpen={showPaymentRedirect}
+        onClose={() => setShowPaymentRedirect(false)}
+        paymentStatus={paymentFinalStatus}
+        expeditionData={createdExpedition}
+        onNewExpedition={() => {
+          setShowPaymentRedirect(false);
+          setCurrentStep(1);
+          setPaymentStep('idle');
+          setPaymentResponse(null);
+          setPendingExpeditionData(null);
+          setSelectedPaymentMethod(null);
+        }}
+        onViewExpeditions={() => {
+          setShowPaymentRedirect(false);
+          // Rediriger vers la page des expéditions
+          window.location.href = '/client/expeditions';
+        }}
+        onGoToDashboard={() => {
+          setShowPaymentRedirect(false);
+          // Rediriger vers le tableau de bord
+          window.location.href = '/client/dashboard';
+        }}
+      />
     </div>
   );
 };
