@@ -78,7 +78,7 @@ export default function DevenirRelais() {
       'Nom d\'utilisateur': formData.username,
       'Téléphone': formData.phone,
       'Email': formData.email,
-      'Type de commerce': formData.business_type,
+      // 'Type de commerce': formData.business_type,
       'Adresse du gérant': formData.address,
       'Nom du commerce': formData.business_name,
       'Horaires d\'ouverture': formData.opening_hours,
@@ -700,7 +700,7 @@ export default function DevenirRelais() {
                             value={formData.business_type}
                             onChange={handleChange}
                             className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-ksl-red"
-                            required
+                            disabled
                           >
                             <option value="">Sélectionner le type</option>
                             <option value="boutique">Boutique</option>

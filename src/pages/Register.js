@@ -19,7 +19,7 @@ export default function Register() {
     email: '',
     phone: '',
     role: '',
-    statut: 'inactif', // Sera mis à jour selon le rôle
+    statut: 'actif', // Sera mis à jour selon le rôle
     business_type: '',
     business_type_other: '',
     address: ''
@@ -363,7 +363,7 @@ export default function Register() {
                             value={formData.business_type}
                             onChange={handleChange}
                             className="w-full pl-10 pr-4 py-2 sm:py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-dark-bg-secondary text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-ksl-red"
-                            required
+                            required={formData.role === 'relay_point' || formData.role === 'entreprise'}
                           >
                             <option value="">Sélectionner le type d'entreprise</option>
                             <option value="boutique">Boutique</option>
