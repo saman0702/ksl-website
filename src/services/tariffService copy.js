@@ -5,7 +5,6 @@
 // ===================================================================
 
 import { tariffAPI } from './api';
-import { ABIDJAN_COMMUNES } from '../utils/constants';
 
 // 🗺️ CONSTANTES DES ZONES GÉOGRAPHIQUES CÔTE D'IVOIRE
 const GEOGRAPHIC_ZONES = {
@@ -106,7 +105,7 @@ export const CITY_ZONE_MAPPING = {
   // ========================================
   'Boundiali': 'zone4',
   'Kouto': 'zone4',
-  // 'Ferkessedougou': 'zone4', // Doublon corrigé, conservé en zone5 ci-dessous
+  'Ferkessedougou': 'zone4',
   'Kong': 'zone4',
   'Tobia': 'zone4',
   'Cainua': 'zone4',
@@ -142,7 +141,7 @@ export const CITY_ZONE_MAPPING = {
   'Kassere': 'zone5',
   'Kolia': 'zone5',
   'Diawala': 'zone5',
-  'Ferkessédougou': 'zone5',
+  'Ferkessedougou': 'zone5',
   'Koumbala': 'zone5',
   'Nielle': 'zone5',
   'Ouangolo-dougou': 'zone5',
@@ -274,110 +273,6 @@ export const CITY_ZONE_MAPPING = {
   'Seydougou': 'zone5',
   'Tiemé': 'zone5',
   'Tienko': 'zone5',
-};
-
-// 🔤 Normalisation robuste des noms de villes (insensible à la casse et aux accents)
-const normalizeCityName = (name) => {
-  if (!name) return '';
-  return name
-    .toString()
-    .trim()
-    .toLowerCase()
-    // Supprimer les accents
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    // Unifier séparateurs
-    .replace(/['’`]/g, '')
-    .replace(/[\s_-]+/g, ' ')
-    .trim();
-};
-
-// 🗺️ Index normalisé: permet la recherche insensible à la casse/accents
-const NORMALIZED_CITY_ZONE_MAP = (() => {
-  const map = new Map();
-  Object.entries(CITY_ZONE_MAPPING).forEach(([rawCity, zone]) => {
-    const n = normalizeCityName(rawCity);
-    if (!map.has(n)) map.set(n, zone);
-    // Variantes simples supplémentaires (sans espaces)
-    const nNoSpace = n.replace(/\s+/g, '');
-    if (!map.has(nNoSpace)) map.set(nNoSpace, zone);
-  });
-  return map;
-})();
-
-// 🧭 OUTILS POUR EXTRAIRE VILLE/COMMUNE D'UNE ADRESSE TEXTE
-const KNOWN_COMMUNES = (() => {
-  const set = new Set();
-  (ABIDJAN_COMMUNES || []).forEach(c => {
-    const label = c.label || c.value || '';
-    const value = c.value || c.label || '';
-    const nLabel = normalizeCityName(label);
-    const nValue = normalizeCityName(value);
-    if (nLabel) set.add(nLabel);
-    if (nValue) set.add(nValue);
-    // variantes simples (sans espaces)
-    if (nLabel) set.add(nLabel.replace(/\s+/g, ''));
-    if (nValue) set.add(nValue.replace(/\s+/g, ''));
-  });
-  // Ajouter quelques alias fréquents
-  set.add(normalizeCityName('Le Plateau'));
-  set.add(normalizeCityName('Plateau'));
-  return set;
-})();
-
-const tryMatchCommune = (token) => {
-  const n = normalizeCityName(token);
-  if (!n) return null;
-  if (KNOWN_COMMUNES.has(n) || KNOWN_COMMUNES.has(n.replace(/\s+/g, ''))) {
-    // Re-construire en casse titre simple
-    const titled = n.split(' ').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
-    // Harmoniser des cas connus
-    if (titled.toLowerCase().includes('plateau')) return 'Plateau';
-    return titled;
-  }
-  return null;
-};
-
-const tryMatchCity = (token) => {
-  const n = normalizeCityName(token);
-  if (!n) return null;
-  const zone = NORMALIZED_CITY_ZONE_MAP.get(n) || NORMALIZED_CITY_ZONE_MAP.get(n.replace(/\s+/g, ''));
-  if (zone) {
-    // Retrouver la clé originale la plus proche (pour affichage), sinon retourner token trim
-    // Ici, on renvoie simplement la version sans accents avec casse titre
-    const titled = n.split(' ').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
-    return titled;
-  }
-  return null;
-};
-
-const extractLocationFromText = (addressText) => {
-  if (!addressText) return { city: null, commune: null, zone: null };
-  const parts = addressText.split(',').map(p => p.trim()).filter(Boolean);
-  let foundCommune = null;
-  let foundCity = null;
-
-  for (const p of parts) {
-    if (!foundCommune) foundCommune = tryMatchCommune(p);
-    if (!foundCity) foundCity = tryMatchCity(p);
-  }
-
-  // Cas Abidjan fréquent: si ville non détectée mais un token contient "abidjan"
-  if (!foundCity) {
-    const hasAbidjan = parts.some(p => normalizeCityName(p) === normalizeCityName('Abidjan'));
-    if (hasAbidjan) foundCity = 'Abidjan';
-  }
-
-  const zone = foundCity ? getCityZone(foundCity) : null;
-  return { city: foundCity, commune: foundCommune, zone };
-};
-
-const parseRouteText = (routeText) => {
-  if (!routeText) return null;
-  const [left, right] = routeText.split(/→|->|=>/).map(s => s && s.trim());
-  if (!left || !right) return null;
-  const origin = extractLocationFromText(left);
-  const destination = extractLocationFromText(right);
-  return { origin, destination };
 };
 
 // 🆕 FONCTION POUR RÉCUPÉRER LA GRILLE TARIFAIRE D'UN TRANSPORTEUR
@@ -719,27 +614,28 @@ const calculateFactors = (tariffGrid, shipmentData) => {
 export const getCityZone = (cityName) => {
   if (!cityName) return null;
   
-  // Normaliser le nom de la ville (casse/accents/espaces)
-  const normalizedCity = normalizeCityName(cityName);
+  // Normaliser le nom de la ville
+  const normalizedCity = cityName.trim().toLowerCase();
   
   console.log('🔍 Recherche de zone pour:', cityName, '(normalisé:', normalizedCity, ')');
   
-  // 1) Correspondance exacte normalisée
-  const directZone = NORMALIZED_CITY_ZONE_MAP.get(normalizedCity) || NORMALIZED_CITY_ZONE_MAP.get(normalizedCity.replace(/\s+/g, ''));
-  if (directZone) {
-    console.log('✅ Correspondance exacte trouvée (normalisée):', normalizedCity, '→', directZone);
+  // Chercher une correspondance exacte d'abord
+  for (const [city, zone] of Object.entries(CITY_ZONE_MAPPING)) {
+    if (normalizedCity === city.toLowerCase()) {
+      console.log('✅ Correspondance exacte trouvée:', city, '→', zone);
     return {
-      id: directZone,
-      name: GEOGRAPHIC_ZONES[directZone].name,
-      factor: GEOGRAPHIC_ZONES[directZone].factor
-    };
+        id: zone,
+        name: GEOGRAPHIC_ZONES[zone].name,
+        factor: GEOGRAPHIC_ZONES[zone].factor
+      };
+    }
   }
   
-  // 2) Correspondance partielle (normalisée)
-  for (const [nCity, zone] of NORMALIZED_CITY_ZONE_MAP.entries()) {
-    if (nCity.includes(normalizedCity) || normalizedCity.includes(nCity)) {
-      console.log('✅ Correspondance partielle trouvée (normalisée):', nCity, '→', zone);
-      return {
+  // Chercher une correspondance partielle
+  for (const [city, zone] of Object.entries(CITY_ZONE_MAPPING)) {
+    if (normalizedCity.includes(city.toLowerCase()) || city.toLowerCase().includes(normalizedCity)) {
+      console.log('✅ Correspondance partielle trouvée:', city, '→', zone);
+    return {
         id: zone,
         name: GEOGRAPHIC_ZONES[zone].name,
         factor: GEOGRAPHIC_ZONES[zone].factor
@@ -797,9 +693,11 @@ export const calculateTariff = async (shipmentData) => {
     declaredValue = 0,
     isInsured = false,
     distance = 0,
+    isDepotRelayPoint = false,
+    isPickupRelayPoint = false,
+    isHolidayWeekend = false,
     carrierId = null,
-    // isDepotRelayPoint / isPickupRelayPoint / isHolidayWeekend / vehicleType
-    // restent accessibles via shipmentData pour calculateFactors
+    vehicleType = 'voiture'
   } = shipmentData;
 
   try {
@@ -812,25 +710,6 @@ export const calculateTariff = async (shipmentData) => {
       throw new Error(`Données invalides: ${validation.errors.join(', ')}`);
     }
     
-    // 0️⃣ PARSING OPTIONNEL DES ADRESSES TYPE "Trajet ... → ..."
-    // Si shipmentData.routeText est fourni, on priorise la tarification par commune si détectée
-    let effectiveOriginCity = originCity;
-    let effectiveDestinationCity = destinationCity;
-    let originCommune = null;
-    let destinationCommune = null;
-
-    if (shipmentData.routeText) {
-      const parsed = parseRouteText(shipmentData.routeText);
-      if (parsed?.origin?.city) effectiveOriginCity = parsed.origin.city;
-      if (parsed?.destination?.city) effectiveDestinationCity = parsed.destination.city;
-      originCommune = parsed?.origin?.commune;
-      destinationCommune = parsed?.destination?.commune;
-
-      console.log('🧭 Parsing routeText:', shipmentData.routeText);
-      console.log('   - Origin city:', effectiveOriginCity, '| commune:', originCommune);
-      console.log('   - Destination city:', effectiveDestinationCity, '| commune:', destinationCommune);
-    }
-
     // 1️⃣ RÉCUPÉRER LA GRILLE TARIFAIRE
     const carrierIdToUse = carrierId || shipmentData.carrierCode;
     console.log('🚚 Transporteur utilisé pour la grille tarifaire:', carrierIdToUse);
@@ -846,22 +725,19 @@ export const calculateTariff = async (shipmentData) => {
     // 2️⃣ CALCULER LES TARIFS PAR TYPE
     const volumeLiters = volumeCm3 ? volumeCm3 / 1000 : (length * width * height) / 1000;
     
-    console.log('📍 ÉTAPE 2 - Villes détectées:', effectiveOriginCity, '→', effectiveDestinationCity);
+    console.log('📍 ÉTAPE 2 - Villes détectées:', originCity, '→', destinationCity);
     
     // Calculer les différents tarifs
     const weightTariff = calculateWeightTariff(weight, tariffGrid.TarifPoids);
     const volumeTariff = calculateVolumeTariff(volumeLiters, tariffGrid.TarifVolum);
     const distanceTariff = calculateDistanceTariff(distance, tariffGrid.TarifDistance);
-    // Si commune détectée des deux côtés, on priorise cette tarification
-    const communeTariff = (originCommune && destinationCommune)
-      ? calculateCommuneTariff(originCommune, destinationCommune, tariffGrid.TarifCommune)
-      : calculateCommuneTariff(effectiveOriginCity, effectiveDestinationCity, tariffGrid.TarifCommune);
+    const communeTariff = calculateCommuneTariff(originCity, destinationCity, tariffGrid.TarifCommune);
     const zoneTariff = calculateZoneTariff(
-      getCityZone(effectiveOriginCity)?.id, 
-      getCityZone(effectiveDestinationCity)?.id, 
+      getCityZone(originCity)?.id, 
+      getCityZone(destinationCity)?.id, 
       tariffGrid.TarifZone
     );
-    const cityTariff = calculateCityTariff(effectiveOriginCity, effectiveDestinationCity, tariffGrid.TarifVille);
+    const cityTariff = calculateCityTariff(originCity, destinationCity, tariffGrid.TarifVille);
     
     console.log('💰 ÉTAPE 3 - Tarifs calculés:');
     console.log('   - Tarif poids:', weightTariff, 'FCFA');
@@ -876,12 +752,10 @@ export const calculateTariff = async (shipmentData) => {
     console.log('   - Poids:', weight, 'kg');
     console.log('   - Volume:', volumeLiters, 'L');
     console.log('   - Distance:', distance, 'km');
-    console.log('   - Ville origine:', effectiveOriginCity);
-    console.log('   - Ville destination:', effectiveDestinationCity);
-    console.log('   - Commune origine:', originCommune || '—');
-    console.log('   - Commune destination:', destinationCommune || '—');
-    console.log('   - Zone origine:', getCityZone(effectiveOriginCity)?.id);
-    console.log('   - Zone destination:', getCityZone(effectiveDestinationCity)?.id);
+    console.log('   - Ville origine:', originCity);
+    console.log('   - Ville destination:', destinationCity);
+    console.log('   - Zone origine:', getCityZone(originCity)?.id);
+    console.log('   - Zone destination:', getCityZone(destinationCity)?.id);
     console.log('   - Grille tarifaire:', tariffGrid.name);
     console.log('   - TarifPoids disponible:', tariffGrid.TarifPoids?.length || 0, 'plages');
     console.log('   - TarifVolum disponible:', tariffGrid.TarifVolum?.length || 0, 'plages');
@@ -1016,10 +890,8 @@ export const calculateTariff = async (shipmentData) => {
       },
       details: {
         tariffGrid: tariffGrid.name,
-        originCity: effectiveOriginCity,
-        destinationCity: effectiveDestinationCity,
-        originCommune,
-        destinationCommune,
+        originCity,
+        destinationCity,
         weight,
         volume: volumeLiters,
         distance,

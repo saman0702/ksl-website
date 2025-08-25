@@ -566,8 +566,9 @@ const Expedier = () => {
         serviceType: expeditionData.type_service,
         declaredValue: parseFloat(expeditionData.declared_value) || 0,
         isInsured: expeditionData.isInsured,
-        isDepotRelayPoint: expeditionData.shippingMode === 'relay_point',
-        isPickupRelayPoint: false,
+        // Harmonisation: destination en point relais = retrait au relais (pickup)
+        isDepotRelayPoint: false,
+        isPickupRelayPoint: expeditionData.shippingMode === 'relay_point',
         isHolidayWeekend: false,
         vehicleType: 'voiture',
         carrierId: assignedCarrier?.id || 1
@@ -1971,11 +1972,11 @@ const Expedier = () => {
                   </label>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                     {[
-                      { key: 'flash', name: 'Flash', icon: '⚡', description: 'Rapide', delais: '2h à 4h', color: 'orange' },
-                      { key: 'express', name: 'Express', icon: '🎯', description: 'Simple', delais: '24H - 0-1 JOUR', color: 'red' },
-                      { key: 'standard', name: 'Standard', icon: '📦', description: 'Normal', delais: '24h à 48h', color: 'blue' },
-                      { key: 'economique', name: 'Économique', icon: '💰', description: 'Éco', delais: '48h à 78h', color: 'green' },
-                      { key: 'interurbaine', name: 'Interurbaine', icon: '🌍', description: 'Interurbaine', delais: '86H - 2-4 JOURS', color: 'purple' },
+                        { key: 'flash', name: 'Flash', icon: '⚡', description: 'Rapide', factor: 1.5, delais: '2h à 4h', color: 'orange' },
+                        { key: 'express', name: 'Express', icon: '🎯', description: 'Simple', factor: 1.2, delais: '24H - 0-1 JOUR', color: 'red' },
+                        { key: 'standard', name: 'Standard', icon: '📦', description: 'Normal', factor: 1.0, delais: '24h à 48h', color: 'blue' },
+                        { key: 'economique', name: 'Économique', icon: '💰', description: 'Éco', factor: 0.8, delais: '48h à 78h', color: 'green' },
+                        { key: 'interurbaine', name: 'Interubaine', icon: '🌍', description: 'Interubaine', factor: 0.9, delais: '86H - 2-4 JOURS', color: 'purple' },
                     ].map((service) => (
                       <button
                         key={service.key}
@@ -2524,6 +2525,14 @@ const Expedier = () => {
               <p className="text-sm text-gray-600 dark:text-gray-400 font-medium">
                 Prix final estimé
               </p>
+            </div>
+
+            {/* Trajet affiché avec les adresses exactes saisies */}
+            <div className="flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+              <span className="text-sm text-gray-600 dark:text-gray-300">Trajet</span>
+              <span className="font-semibold text-gray-900 dark:text-white text-sm text-right">
+                {expeditionData.from_address} → {expeditionData.to_address}
+              </span>
             </div>
 
             {/* Détails du calcul */}

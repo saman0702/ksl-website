@@ -1221,7 +1221,7 @@ const ClientSendParcel = () => {
       console.log('   - Ville destination:', destinationCity);
       
       // 2️⃣ Calculer le poids total et les dimensions (CORRIGÉ AVEC VALIDATION)
-      const totalWeight = expeditionData.pickup_items.reduce((sum, item) => {
+      let totalWeight = expeditionData.pickup_items.reduce((sum, item) => {
         const weight = parseFloat(item.weight) || 0;
         const quantity = parseInt(item.quantity) || 1;
         const itemWeight = weight * quantity;
@@ -1297,16 +1297,9 @@ const ClientSendParcel = () => {
       console.log('   - Délai de livraison:', expeditionData.delais_livraison || '24h à 48h');
       console.log('   - Véhicule ID pour référence:', expeditionData.vehicle_type_id);
       
-      // 4️⃣ Gestion du point relais
-      let isRelayPoint = expeditionData.shippingMode === 'relay_point';
-      let relayPointFee = 0;
-      
-      if (isRelayPoint) {
-        relayPointFee = -100; // Réduction de 100 FCFA
-        console.log('🏪 ÉTAPE 4 - Point relais:');
-        console.log('   - Mode point relais activé');
-        console.log('   - Réduction appliquée:', relayPointFee, 'FCFA');
-      }
+      // 4️⃣ Gestion du point relais (ajustements externes supprimés, délégués à tariffService)
+      const isRelayPoint = expeditionData.shippingMode === 'relay_point';
+      const relayPointFee = 0; // Harmonisation: pas d'ajustement manuel ici
       
       // 5️⃣ Assurance (selon choix utilisateur)
       const declaredValue = parseFloat(expeditionData.declared_value) || 0;
@@ -1318,6 +1311,25 @@ const ClientSendParcel = () => {
       console.log('   - Assurance activée (final):', isInsured);
       
       // 6️⃣ Calculer le tarif avec notre service (NOUVELLE VERSION API)
+      // Calcul distance Haversine si coordonnées disponibles
+      const hasCoords = [expeditionData.from_latitude, expeditionData.from_longitude, expeditionData.to_latitude, expeditionData.to_longitude]
+        .every(v => typeof v !== 'undefined' && v !== null && !isNaN(parseFloat(v)));
+      let distanceKm = 0;
+      if (hasCoords) {
+        const lat1 = parseFloat(expeditionData.from_latitude);
+        const lon1 = parseFloat(expeditionData.from_longitude);
+        const lat2 = parseFloat(expeditionData.to_latitude);
+        const lon2 = parseFloat(expeditionData.to_longitude);
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                  Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                  Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        distanceKm = R * c;
+      }
+
       const shipmentData = {
         originCity,
         destinationCity,
@@ -1327,15 +1339,17 @@ const ClientSendParcel = () => {
         height: maxHeight,
         volumeCm3: totalVolumeCm3,
         serviceType,
-        carrierId: assignedCarrier?.id || expeditionData.carrier_id || expeditionData.carrierId || 7, // Utiliser le transporteur assigné ou un transporteur par défaut (FastGo Express)
-        carrierCode: assignedCarrier?.code || 'FASTGO', // Code du transporteur comme fallback
+        carrierId: assignedCarrier?.id || expeditionData.carrier_id || expeditionData.carrierId || 1,
+        carrierCode: assignedCarrier?.code,
         declaredValue,
         isInsured,
-        distance: 0,
-        isDepotRelayPoint: expeditionData.shippingMode === 'relay_point',
+        distance: distanceKm,
+        // Destination point relais → retrait au relais uniquement
+        isDepotRelayPoint: false,
         isPickupRelayPoint: expeditionData.shippingMode === 'relay_point',
         isHolidayWeekend: false,
-        vehicleType: expeditionData.vehicle_type || 'voiture' // Type de véhicule pour le facteur équipement
+        vehicleType: expeditionData.vehicle_type || 'voiture', // Type de véhicule pour le facteur équipement
+        routeText: `${expeditionData.from_address || originCity} → ${expeditionData.to_address || destinationCity}`
       };
       
       console.log('📊 ÉTAPE 6 - Appel du service de tarification (API):');
@@ -1380,23 +1394,9 @@ const ClientSendParcel = () => {
       console.log('🎯 ÉTAPE 8 - Ajustements spéciaux:');
       console.log('   - Prix avant ajustements:', finalPrice.toFixed(0), 'FCFA');
       
-      // Ajustement point relais
-      if (isRelayPoint) {
-        finalPrice += relayPointFee;
-        console.log('   - Après réduction point relais:', finalPrice.toFixed(0), 'FCFA');
-      }
-      
-      // Frais de weekend/jour férié (optionnel)
-      const today = new Date();
-      const isWeekend = today.getDay() === 0 || today.getDay() === 6;
-      let weekendFee = 0;
-      
-      if (isWeekend && serviceType === 'express') {
-        weekendFee = 200; // Supplément weekend
-        finalPrice += weekendFee;
-        console.log('   - Supplément weekend ajouté:', weekendFee.toFixed(0), 'FCFA');
-        console.log('   - Après supplément weekend:', finalPrice.toFixed(0), 'FCFA');
-      }
+      // Ajustements externes supprimés (weekend/relay), confiés à tariffService
+      const weekendFee = 0;
+      const isWeekend = false;
       
       // Prix minimum
       const finalPriceWithMinimum = Math.max(finalPrice, 500);
@@ -2397,9 +2397,9 @@ Vous allez être redirigé vers la page de paiement sécurisée.`);
   }, [user]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-3 sm:px-0 overflow-x-hidden">
       {/* Header (TON STYLE) */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
             Nouvelle expédition 
@@ -2767,7 +2767,7 @@ Vous allez être redirigé vers la page de paiement sécurisée.`);
       </div>
 
       {/* Contenu principal (TON STYLE) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         
         {/* Formulaire principal */}
         <div className="lg:col-span-2">
@@ -2961,12 +2961,17 @@ Vous allez être redirigé vers la page de paiement sécurisée.`);
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         📦 Type de colis *
                       </label>
-                      <div className="flex gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                         {packageTypes.map(type => (
                           <button
                             key={type.value}
                             type="button"
-                            className={cn('px-3 py-2 rounded border', expeditionData.packageType === type.value ? 'bg-ksl-red text-white' : 'bg-white dark:bg-dark-bg-secondary')}
+                            className={cn(
+                              'px-4 py-3 rounded-lg border transition-colors w-full justify-center text-center text-base font-medium',
+                              expeditionData.packageType === type.value
+                                ? 'bg-ksl-red text-white border-ksl-red shadow-sm'
+                                : 'bg-white dark:bg-dark-bg-secondary border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'
+                            )}
                             onClick={() => updateExpeditionData('packageType', type.value)}
                           >
                             <span className="mr-1">{type.emoji}</span>{type.label}
@@ -2983,15 +2988,25 @@ Vous allez être redirigé vers la page de paiement sécurisée.`);
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                         🚚 Mode d'expédition *
                       </label>
-                      <div className="flex gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <button
                           type="button"
-                          className={cn('px-3 py-2 rounded border', expeditionData.shippingMode === 'home_delivery' ? 'bg-ksl-red text-white' : 'bg-white dark:bg-dark-bg-secondary')}
+                          className={cn(
+                            'px-4 py-3 rounded-lg border transition-colors w-full justify-center text-base font-medium',
+                            expeditionData.shippingMode === 'home_delivery'
+                              ? 'bg-ksl-red text-white border-ksl-red shadow-sm'
+                              : 'bg-white dark:bg-dark-bg-secondary border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'
+                          )}
                           onClick={() => updateExpeditionData('shippingMode', 'home_delivery')}
                         >Livraison à domicile</button>
                         <button
                           type="button"
-                          className={cn('px-3 py-2 rounded border', expeditionData.shippingMode === 'relay_point' ? 'bg-ksl-red text-white' : 'bg-white dark:bg-dark-bg-secondary')}
+                          className={cn(
+                            'px-4 py-3 rounded-lg border transition-colors w-full justify-center text-base font-medium',
+                            expeditionData.shippingMode === 'relay_point'
+                              ? 'bg-ksl-red text-white border-ksl-red shadow-sm'
+                              : 'bg-white dark:bg-dark-bg-secondary border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'
+                          )}
                           onClick={() => updateExpeditionData('shippingMode', 'relay_point')}
                         >Dépôt en point relais</button>
                       </div>
@@ -3159,39 +3174,11 @@ Vous allez être redirigé vers la page de paiement sécurisée.`);
                       <div className="space-y-4">
                         {/* Si home_delivery, afficher la liste des transporteurs */}
                         <div className="mb-4">
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                            🚛 Transporteur
-                            {isLoadingCarriers && <Loader className="w-4 h-4 ml-2 animate-spin inline" />}
-                          </label>
-                          
                           {carriersError && (
                             <Alert variant="error" className="mb-2">
                               <AlertCircle className="w-4 h-4" />
                               {carriersError}
                             </Alert>
-                          )}
-                          
-                          <select
-                            value={expeditionData.selectedCarrier || ''}
-                            onChange={e => updateExpeditionData('selectedCarrier', e.target.value)}
-                            className="block w-full px-3 py-2 border rounded-lg"
-                            disabled={user?.role === 'entreprise' || isLoadingCarriers}
-                          >
-                            {availableCarriers.map(carrier => (
-                              <option key={carrier.id} value={carrier.id}>
-                                {carrier.nom}
-                              </option>
-                            ))}
-                          </select>
-                          
-                          <p className="text-xs text-gray-500 mt-1">
-                            Transporteur assigné à votre compte
-                          </p>
-                          
-                          {availableCarriers.length === 0 && !isLoadingCarriers && (
-                            <p className="text-sm text-gray-500 mt-1">
-                              Aucun transporteur disponible pour le moment.
-                            </p>
                           )}
                         </div>
 
@@ -3499,7 +3486,7 @@ Vous allez être redirigé vers la page de paiement sécurisée.`);
                     
                     {expeditionData.pickup_items.map((item, index) => (
                       <Card key={index} className="p-4">
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                           <div className="flex-1">
                             <h4 className="font-medium text-gray-900 dark:text-white">
                               {item.name} 
@@ -3659,7 +3646,7 @@ Vous allez être redirigé vers la page de paiement sécurisée.`);
                   <Card className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700">
                     <div className="space-y-3">
                       {/* Type de colis */}
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <span className="text-sm font-medium text-blue-900 dark:text-blue-100">Type de colis:</span>
                         <div className="flex items-center space-x-2">
                           <span className="text-sm text-blue-700 dark:text-blue-300">
@@ -3672,7 +3659,7 @@ Vous allez être redirigé vers la page de paiement sécurisée.`);
                       </div>
 
                       {/* Mode d'expédition */}
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <span className="text-sm font-medium text-blue-900 dark:text-blue-100">Mode d'expédition:</span>
                         <div className="flex items-center space-x-2">
                           <span className="text-sm text-blue-700 dark:text-blue-300">
@@ -3758,7 +3745,7 @@ Vous allez être redirigé vers la page de paiement sécurisée.`);
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
                     🚚 Type de service
                   </label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                     {[
                       { key: 'flash', name: 'Flash', icon: '⚡', description: 'Rapide', factor: 1.5, delais: '2h à 4h', color: 'orange' },
                       { key: 'express', name: 'Express', icon: '🎯', description: 'Simple', factor: 1.2, delais: '24H - 0-1 JOUR', color: 'red' },
@@ -4151,7 +4138,7 @@ Vous allez être redirigé vers la page de paiement sécurisée.`);
                     </p>
                   </div>
                   
-                  <div className="flex space-x-3">
+                  <div className="flex flex-col sm:flex-row sm:space-x-3 space-y-3 sm:space-y-0">
                     <div className="w-24">
                       <select 
                         value={paymentCountryCode}
@@ -4253,7 +4240,7 @@ Vous allez être redirigé vers la page de paiement sécurisée.`);
                   <div className="space-y-6">
                     {/* Détails du paiement */}
                     <Card className="p-6 bg-gradient-to-r from-blue-50 to-green-50 dark:from-blue-900/20 dark:to-green-900/20">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
                         {/* Montant et devise */}
                         <div className="text-center">
                           <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -4269,7 +4256,7 @@ Vous allez être redirigé vers la page de paiement sécurisée.`);
                         </div>
 
                         {/* Pays et opérateurs */}
-                        <div className="text-center">
+                        <div className="hidden text-center">
                           <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
                             <MapPin className="w-6 h-6 text-blue-600" />
                           </div>
@@ -4285,7 +4272,7 @@ Vous allez être redirigé vers la page de paiement sécurisée.`);
                     </Card>
 
                     {/* Instructions de paiement */}
-                    <Card className="p-6 bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-700">
+                    <Card className="hidden p-6 bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-700">
                         <h3 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
                         <AlertTriangle className="w-5 h-5 mr-2 text-yellow-600" />
                         Instructions de paiement
@@ -4367,7 +4354,7 @@ Vous allez être redirigé vers la page de paiement sécurisée.`);
                         </h3>
                         
                         <div className="space-y-4">
-                        <div className="flex space-x-3">
+                        <div className="flex flex-col sm:flex-row gap-3">
                           <Button 
                             onClick={() => {
                               if (paymentResponse?.payment_url) {
@@ -4394,7 +4381,7 @@ Vous allez être redirigé vers la page de paiement sécurisée.`);
                       </Card>
 
                     {/* Instructions importantes */}
-                    <Card className="p-6 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700">
+                    <Card className="hidden p-6 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700">
                       <h3 className="font-semibold text-yellow-900 dark:text-yellow-100 mb-4 flex items-center">
                         <AlertTriangle className="w-5 h-5 mr-2" />
                         Instructions importantes

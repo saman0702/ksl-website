@@ -3,10 +3,10 @@ import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import { Badge } from '../components/ui';
-import { ArrowRight, Star, Users, Package, Truck, Box, Building, DollarSign, RotateCcw, Search, Rocket, Printer, ArrowLeftRight, BarChart3, CreditCard, TrendingUp, Smartphone, User, ShoppingCart, MapPin, Banknote, Bike, Battery, Ruler, Calculator } from 'lucide-react';
+import { ArrowRight, Star, Users, Package, Truck, Box, Building, DollarSign, RotateCcw, Search, Rocket, Printer, ArrowLeftRight, BarChart3, CreditCard, TrendingUp, Smartphone, User, ShoppingCart, MapPin, Bike, Battery, Ruler, Calculator } from 'lucide-react';
 import LocationSearch from '../components/ui/LocationSearch';
 import { expeditionAPI, carrierAPI, relayAPI } from '../services/api';
-import { calculateTariff } from '../services/tariffServiceSimulateur';
+import { calculateTariff } from '../services/tariffService';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -123,6 +123,16 @@ export default function Home() {
     }
   };
 
+  // Extrait une adresse lisible à partir d'une valeur LocationSearch (objet) ou d'une chaîne
+  const getAddressText = (location) => {
+    if (!location) return '';
+    if (typeof location === 'string') return location;
+    if (typeof location === 'object') {
+      return location.address || location.full_address || location.name || location.label || location.value || location.city || '';
+    }
+    return '';
+  };
+
   const getRelayName = async (relayId) => {
     try {
       const response = await relayAPI.getAllRelays();
@@ -228,22 +238,47 @@ export default function Home() {
         return '';
       };
 
-      // Préparer les données pour le calcul de tarif
+      // Calcul distance si coordonnées disponibles dans les objets LocationSearch
+      const extractLat = (loc) => (typeof loc === 'object' ? parseFloat(loc?.latitude) : NaN);
+      const extractLng = (loc) => (typeof loc === 'object' ? parseFloat(loc?.longitude) : NaN);
+      const lat1 = extractLat(pickupLocation);
+      const lon1 = extractLng(pickupLocation);
+      const lat2 = extractLat(deliveryLocation);
+      const lon2 = extractLng(deliveryLocation);
+      let distanceKm = 0;
+      if ([lat1, lon1, lat2, lon2].every(v => typeof v === 'number' && !isNaN(v))) {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                  Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                  Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        distanceKm = R * c;
+      }
+
+      // Construire un routeText pour aider à la détection ville/commune dans tariffService
+      const originAddress = typeof pickupLocation === 'object' ? (pickupLocation.address || getCityName(pickupLocation)) : getCityName(pickupLocation);
+      const destinationAddress = typeof deliveryLocation === 'object' ? (deliveryLocation.address || getCityName(deliveryLocation)) : getCityName(deliveryLocation);
+
+      // Préparer les données pour le calcul de tarif (alignées avec Expedier)
       const shipmentData = {
         originCity: getCityName(pickupLocation),
         destinationCity: getCityName(deliveryLocation),
+        routeText: originAddress && destinationAddress ? `${originAddress} → ${destinationAddress}` : undefined,
         weight: parseFloat(weight),
         length: parseFloat(length),
         width: parseFloat(width),
         height: parseFloat(height),
-        volumeCm3: parseFloat(length) * parseFloat(width) * parseFloat(height),
+        volumeCm3: (parseFloat(length) || 0) * (parseFloat(width) || 0) * (parseFloat(height) || 0),
         carrierId: 1, // Transporteur ID 1 par défaut
         serviceType: serviceType,
-        isInsured: declaredValue > 0,
+        isInsured: (parseFloat(declaredValue) || 0) > 0,
         declaredValue: parseFloat(declaredValue) || 0,
-        distance: 0, // Sera calculé automatiquement si nécessaire
-        isDepotRelayPoint: deliveryMode === 'relais',
-        isPickupRelayPoint: deliveryMode === 'relais',
+        distance: distanceKm,
+        // Harmonisation: destination en point relais = retrait au relais (pickup)
+        isDepotRelayPoint: false,
+        isPickupRelayPoint: deliveryMode === 'relay_point',
         isHolidayWeekend: false,
         vehicleType: 'voiture'
       };
@@ -318,21 +353,7 @@ export default function Home() {
     console.log('📍 [handleDeliveryLocationSelect] → Location sélectionnée:', location);
   };
 
-  const getStatusIcon = (status) => {
-    switch (status?.toLowerCase()) {
-      case 'livré':
-      case 'delivered':
-        return <Package className="w-4 h-4 text-green-600" />;
-      case 'en route':
-      case 'in transit':
-        return <Bike className="w-4 h-4 text-blue-600" />;
-      case 'préparé':
-      case 'prepared':
-        return <Package className="w-4 h-4 text-yellow-600" />;
-      default:
-        return <Package className="w-4 h-4 text-gray-600" />;
-    }
-  };
+  // getStatusIcon non utilisé → supprimé pour éviter le warning linter
 
   const getStatusColor = (status) => {
     switch (status?.toLowerCase()) {
@@ -1100,7 +1121,7 @@ export default function Home() {
                         <div className="flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
                           <span className="text-gray-600 dark:text-gray-300">Trajet</span>
                           <span className="font-semibold text-gray-900 dark:text-white text-sm">
-                            {estimationResult.details.originCity} → {estimationResult.details.destinationCity}
+                            {getAddressText(pickupLocation)} → {getAddressText(deliveryLocation)}
                           </span>
                         </div>
                         <div className="flex justify-between items-center p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
